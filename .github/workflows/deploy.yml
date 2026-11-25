@@ -52,7 +52,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           SITE_URL: ${{ steps.cloudflare.outputs.url }}
-        run: npx --no-install wrangler deploy --var "PUBLIC_URL:$SITE_URL" --var "TELEGRAM_ENABLED:false"
+        run: npx --no-install wrangler deploy --var "PUBLIC_URL:$SITE_URL" --var "TELEGRAM_ENABLED:true"
       - name: Verificar portada y estado de las fuentes
         env:
           SITE_URL: ${{ steps.cloudflare.outputs.url }}
@@ -60,14 +60,14 @@ jobs:
           for attempt in 1 2 3 4 5 6; do
             if curl -fsS "$SITE_URL/" -o /tmp/costco-site.html &&
               grep -q 'Proyecto independiente' /tmp/costco-site.html &&
-              grep -q 'https://t.me/costco_gasolineras' /tmp/costco-site.html &&
+              ! grep -q 'https://t.me/' /tmp/costco-site.html &&
               grep -q 'Desarrollado por <a href="https://zetaweb.es/">zetaweb.es' /tmp/costco-site.html; then
               break
             fi
             if [ "$attempt" -eq 6 ]; then exit 1; fi
             sleep 5
           done
-          curl -fsS --retry 3 "$SITE_URL/api/v1/status" | jq -e '.telegramEnabled == false and (has("officialEnabled") | not)'
-          curl -fsS --retry 3 "$SITE_URL/api/v1/sources" | jq -e '[.data[].id] == ["telegram"]'
-          curl -fsS --retry 3 "$SITE_URL/api/v1/prices" | jq -e 'all(.data[]; .source == "telegram")'
+          curl -fsS --retry 3 "$SITE_URL/api/v1/status" | jq -e '.telegramEnabled == true and (has("officialEnabled") | not)'
+          curl -fsS --retry 3 "$SITE_URL/api/v1/sources" | jq -e '[.data[].id] == ["telegram"] and all(.data[]; has("url") | not)'
+          curl -fsS --retry 3 "$SITE_URL/api/v1/prices" | jq -e 'all(.data[]; .source == "telegram" and (has("source_url") | not))'
           printf 'Web publicada y verificada. %s\n' "$SITE_URL" >> "$GITHUB_STEP_SUMMARY"

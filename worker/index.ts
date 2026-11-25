@@ -73,7 +73,7 @@ api.get("/prices", async (c) =>
   c.json({
     data: (
       await c.env.DB.prepare(
-        `SELECT p.*,f.name AS fuel_name,d.modality,d.url AS source_url, (SELECT MAX(o.published_at) FROM observations o
+        `SELECT p.*,f.name AS fuel_name,d.modality, (SELECT MAX(o.published_at) FROM observations o
   WHERE o.station=p.station AND o.fuel=p.fuel AND o.source=p.source) AS verified_at
   FROM current_prices p JOIN data_sources d ON d.id=p.source JOIN fuel_types f ON f.id=p.fuel JOIN stations s ON s.slug=p.station AND s.active=1 WHERE p.source='telegram' AND s.official_id IS NULL ORDER BY p.station,p.fuel,p.source LIMIT 500`,
       ).all()
@@ -197,7 +197,7 @@ api.get("/sources", async (c) =>
   c.json({
     data: (
       await c.env.DB.prepare(
-        "SELECT * FROM data_sources WHERE id='telegram'",
+        "SELECT id,name,modality FROM data_sources WHERE id='telegram'",
       ).all()
     ).results,
   }),

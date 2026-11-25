@@ -476,8 +476,8 @@ function Home({
               calcula cuánto puedes ahorrar al repostar.
             </p>
             <div className="actions">
-              <a className="button mint" href="https://t.me/costco_gasolineras">
-                Ver precios en Telegram <ArrowRight size={17} />
+              <a className="button mint" href="#gasolineras">
+                Ver precios Costco <ArrowRight size={17} />
               </a>
               <a className="button ghost" href="/mapa">
                 <MapPin size={17} /> Explorar el mapa
@@ -547,9 +547,12 @@ function Home({
       </div>
       {status && (
         <div className="source-line">
-          <a href="https://t.me/costco_gasolineras">
-            Consultar precios en el canal de Telegram
-          </a>
+          <span>
+            {status.data.find((record) => record.source === "telegram")
+              ?.last_success
+              ? "Precios de socios sincronizados"
+              : "Pendiente de la primera actualización de precios"}
+          </span>
         </div>
       )}
       <section id="gasolineras">
@@ -656,7 +659,7 @@ function Home({
           <Empty>
             {stations.length
               ? "Ninguna estación coincide con los filtros."
-              : "Consulta los precios para socios directamente en el canal de Telegram."}
+              : "Los precios de socios aparecerán tras la primera actualización."}
           </Empty>
         )}
       </section>
@@ -728,7 +731,7 @@ function Card({
           group.length > 0 && (
             <div className="price-group" key={source}>
               <div className="price-source">
-                <a href={group[0].source_url}>{sourceName()}</a>
+                <span>{sourceName()}</span>
                 <span title="Última verificación">
                   {stamp(
                     group
@@ -1689,10 +1692,7 @@ function Admin() {
             <ul>
               {overview.messages.map((m) => (
                 <li key={m.id}>
-                  <a href={"https://t.me/costco_gasolineras/" + m.id}>
-                    Publicación {m.id}
-                  </a>{" "}
-                  · {stamp(m.published_at)}
+                  <span>Publicación {m.id}</span> · {stamp(m.published_at)}
                 </li>
               ))}
             </ul>
@@ -2060,11 +2060,7 @@ function Legal({ slug, title }: { slug: string; title: string }) {
     fuentes: (
       <>
         <ul>
-          <li>
-            <a href="https://t.me/s/costco_gasolineras">
-              Telegram · precios para socios
-            </a>
-          </li>
+          <li>Telegram · precios para socios</li>
           <li>
             <a href="https://www.openstreetmap.org/copyright">
               OpenStreetMap · cartografía
@@ -2073,8 +2069,8 @@ function Legal({ slug, title }: { slug: string; title: string }) {
         </ul>
 
         <p>
-          El canal publica precios de combustible para socios de Costco. Puedes
-          consultarlos directamente en Telegram.
+          Esta web publica los precios de combustible autorizados para socios de
+          Costco.
         </p>
       </>
     ),

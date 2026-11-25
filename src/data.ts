@@ -27,7 +27,6 @@ export type Price = {
   published_at: string;
   verified_at?: string;
   event: string;
-  source_url?: string;
 };
 export type Nearby = {
   official_id: string;

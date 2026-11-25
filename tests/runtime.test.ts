@@ -138,6 +138,24 @@ describe("Worker y D1", () => {
       ).status,
     ).toBe(200);
   });
+  it("no publica la URL del canal en la API", async () => {
+    const sources = await runtime.dispatchFetch(origin + "/api/v1/sources");
+    expect(await sources.json()).toEqual({
+      data: [
+        {
+          id: "telegram",
+          name: "Canal público de Telegram",
+          modality: "socios",
+        },
+      ],
+    });
+    const prices = await runtime.dispatchFetch(origin + "/api/v1/prices");
+    const { data } = (await prices.json()) as {
+      data: Record<string, unknown>[];
+    };
+    expect(data.length).toBeGreaterThan(0);
+    expect(data.every((price) => !("source_url" in price))).toBe(true);
+  });
   it("calcula la media con el precio previo al rango aunque se paginen los cambios", async () => {
     const db = await runtime.getD1Database("DB");
     await db.batch([

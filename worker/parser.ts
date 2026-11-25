@@ -1,4 +1,3 @@
-export const telegramUrl = "https://t.me/s/costco_gasolineras";
 export const slugify = (name: string) =>
   name
     .normalize("NFD")
@@ -81,15 +80,23 @@ export function parseMessage(
     ? { id, date: new Date(date).toISOString(), quotes: [...quotes.values()] }
     : null;
 }
-export async function parseTelegram(response: Response) {
+export async function parseTelegram(response: Response, channel?: string) {
   const cards: { id: number; date: string; body: string }[] = [];
   const rewriter = new HTMLRewriter()
     .on(".tgme_widget_message[data-post]", {
       element(element) {
-        const id = /^costco_gasolineras\/(\d+)$/.exec(
+        const post = /^([a-z0-9_]+)\/(\d+)$/i.exec(
           element.getAttribute("data-post") ?? "",
         );
-        cards.push({ id: Number(id?.[1]), date: "", body: "" });
+        cards.push({
+          id:
+            post &&
+            (!channel || post[1].toLowerCase() === channel.toLowerCase())
+              ? Number(post[2])
+              : NaN,
+          date: "",
+          body: "",
+        });
       },
     })
     .on(".tgme_widget_message_date time", {

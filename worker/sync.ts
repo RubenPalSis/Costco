@@ -1,4 +1,4 @@
-import { parseTelegram, telegramUrl, type Message } from "./parser";
+import { parseTelegram, type Message } from "./parser";
 
 export type Env = {
   DB: D1Database;
@@ -150,15 +150,31 @@ async function ingestTelegram(
   if (importHistory && state?.cursor === 0) return { exhausted: true };
   let retry = 0;
   try {
-    const url = new URL(telegramUrl);
-    if (importHistory && state?.cursor)
-      url.searchParams.set("before", String(state.cursor));
-    const response =
-      fixture ??
-      (await fetch(url, {
+    let response = fixture;
+    let channel: string | undefined;
+    if (!response) {
+      const sourceUrl = await env.DB.prepare(
+        "SELECT url FROM data_sources WHERE id='telegram'",
+      ).first<string>("url");
+      if (!sourceUrl) throw new Error("Falta configurar la fuente Telegram");
+      const url = new URL(sourceUrl);
+      channel = /^\/s\/([a-z0-9_]+)\/?$/i.exec(url.pathname)?.[1];
+      if (
+        url.origin !== "https://t.me" ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash ||
+        !channel
+      )
+        throw new Error("Configuración de Telegram inválida");
+      if (importHistory && state?.cursor)
+        url.searchParams.set("before", String(state.cursor));
+      response = await fetch(url, {
         headers: { accept: "text/html" },
         signal: AbortSignal.timeout(12000),
-      }));
+      });
+    }
     if (!response.ok) {
       const header = response.headers.get("Retry-After");
       retry = header
@@ -166,7 +182,7 @@ async function ingestTelegram(
         : 0;
       throw new Error("Telegram HTTP " + response.status);
     }
-    const { messages, cursor } = await parseTelegram(response);
+    const { messages, cursor } = await parseTelegram(response, channel);
     if (!messages.length && (!importHistory || !state?.cursor))
       throw new Error(
         "Telegram no devolvió publicaciones de precios reconocibles",

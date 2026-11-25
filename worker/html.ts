@@ -188,7 +188,7 @@ export async function publicPage(request: Request, env: Env) {
     .on("#root", {
       element(el) {
         el.setInnerContent(
-          '<main class="shell"><nav aria-label="Navegación"><a href="/">Inicio</a><a href="/historico">Histórico</a><a href="https://t.me/costco_gasolineras">Ver precios en Telegram</a></nav>' +
+          '<main class="shell"><nav aria-label="Navegación"><a href="/">Inicio</a><a href="/historico">Histórico</a><a href="/gasolineras">Gasolineras</a></nav>' +
             '<aside class="notice independence" aria-label="Proyecto independiente">' +
             escape(independenceNotice) +
             "</aside>" +

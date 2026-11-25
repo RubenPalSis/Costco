@@ -27,5 +27,5 @@
 ## Versión centrada en Costco
 
 - [x] Retirar la fuente anterior y el comparador con otras marcas de la web y la API.
-- [x] Mostrar el enlace directo al canal de precios para socios de Costco.
-- [ ] Confirmar el permiso aplicable antes de habilitar la republicación automática del canal en producción.
+- [x] Ocultar el enlace al canal en la web y la API pública.
+- [x] El responsable del proyecto confirmó el permiso de reutilización del canal.
