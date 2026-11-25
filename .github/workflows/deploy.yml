@@ -53,6 +53,16 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           SITE_URL: ${{ steps.cloudflare.outputs.url }}
         run: npx --no-install wrangler deploy --var "PUBLIC_URL:$SITE_URL" --var "TELEGRAM_ENABLED:true"
+      - name: Cargar histórico autorizado de precios
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DATABASE_ID: ${{ steps.database.outputs.database_id }}
+        run: |
+          sql="$RUNNER_TEMP/costco-initial-history.sql"
+          trap 'rm -f "$sql"' EXIT
+          node scripts/seed-history.mjs "$sql"
+          if [ -s "$sql" ]; then npx --no-install wrangler d1 execute DB --remote --file "$sql" --yes; fi
       - name: Verificar portada y estado de las fuentes
         env:
           SITE_URL: ${{ steps.cloudflare.outputs.url }}
@@ -69,5 +79,5 @@ jobs:
           done
           curl -fsS --retry 3 "$SITE_URL/api/v1/status" | jq -e '.telegramEnabled == true and (has("officialEnabled") | not)'
           curl -fsS --retry 3 "$SITE_URL/api/v1/sources" | jq -e '[.data[].id] == ["telegram"] and all(.data[]; has("url") | not)'
-          curl -fsS --retry 3 "$SITE_URL/api/v1/prices" | jq -e 'all(.data[]; .source == "telegram" and (has("source_url") | not))'
+          curl -fsS --retry 3 "$SITE_URL/api/v1/prices" | jq -e '(.data|length)>0 and all(.data[]; .source == "telegram" and (has("source_url") | not))'
           printf 'Web publicada y verificada. %s\n' "$SITE_URL" >> "$GITHUB_STEP_SUMMARY"

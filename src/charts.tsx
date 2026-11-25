@@ -58,7 +58,7 @@ export function HistoryChart({
             name={row.name}
             type="stepAfter"
             dataKey={row.id}
-            stroke={index === 0 ? "#168560" : "#7c4dc0"}
+            stroke={index === 0 ? "#005a9c" : "#ba1530"}
             strokeDasharray={index === 0 ? undefined : "6 4"}
             strokeWidth={3}
             connectNulls
@@ -89,7 +89,7 @@ export function SavingsChart({
         <XAxis dataKey="station" />
         <YAxis tickFormatter={(v) => euros(v, 0)} />
         <Tooltip formatter={(value) => [euros(Number(value), 2), "Coste"]} />
-        <Bar dataKey="cost" fill="#168560" radius={[6, 6, 0, 0]} />
+        <Bar dataKey="cost" fill="#005a9c" radius={[6, 6, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

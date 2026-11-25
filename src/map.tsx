@@ -48,7 +48,7 @@ export default function FuelMap({
         radius: 9,
         color: "#fff",
         weight: 2,
-        fillColor: "#168560",
+        fillColor: "#005a9c",
         fillOpacity: 1,
       })
         .addTo(map)

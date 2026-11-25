@@ -1,4 +1,4 @@
-const cacheName = "ahorro-shell-v1";
+const cacheName = "ahorro-shell-v2";
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
