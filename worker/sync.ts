@@ -3,6 +3,7 @@ import { parseTelegram, telegramUrl, type Message } from "./parser";
 export type Env = {
   DB: D1Database;
   ASSETS: Fetcher;
+  VERSION_METADATA?: { id: string };
   TELEGRAM_ENABLED?: string;
   DEGRADED_MODE?: string;
   ADMIN_TOKEN?: string;

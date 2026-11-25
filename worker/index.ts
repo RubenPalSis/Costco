@@ -471,7 +471,11 @@ export default {
     const cacheKey = new Request(
       url.origin + url.pathname + (publicHtml ? "" : url.search),
     );
-    const cache = cacheable ? await caches.open("ahorro-costco-v2") : null;
+    const cache = cacheable
+      ? await caches.open(
+          "ahorro-costco-" + (env.VERSION_METADATA?.id ?? "local"),
+        )
+      : null;
     const conditional = request.headers.get("if-none-match");
     if (cache) {
       const hit = await cache.match(cacheKey);
