@@ -1,6 +1,6 @@
 export const telegramUrl = "https://t.me/s/costco_gasolineras";
 export const officialUrl =
-  "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/";
+  "https://energia.serviciosmin.gob.es/ServiciosRestCarburantes/PreciosCarburantes/EstacionesTerrestres/";
 export const slugify = (name: string) =>
   name
     .normalize("NFD")

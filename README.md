@@ -72,3 +72,5 @@ A 3 peticiones dinámicas por visita corta, el máximo teórico por peticiones s
 - [Facturación de GitHub Actions](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
 
 Consulta [TASKS.md](TASKS.md) para los requisitos de producción y las comprobaciones pendientes.
+
+El flujo de publicación de GitHub Actions utiliza los secretos `CLOUDFLARE_ACCOUNT_ID` y `CLOUDFLARE_API_TOKEN` del entorno `production`. Puede ejecutarse desde `main` o mediante una etiqueta de publicación `publicar-v*`. Usa el subdominio gratuito y crea o reutiliza la base D1. La configuración pública usa MITECO y mantiene Telegram desactivado. Datos de MITECO bajo [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), según su [ficha de datos abiertos](https://datos.gob.es/es/catalogo/e05068001-instalaciones-de-suministro-de-combustibles-a-vehiculos-con-venta-publica).

@@ -244,6 +244,7 @@ function App() {
     };
   }, [path, station]);
   const member = prices.filter((p) => p.source === "telegram");
+  const defaultSource = status?.officialEnabled && !status.telegramEnabled ? "official" : "telegram";
   const legalPage = legal.find(([url]) => "/" + url === path);
   let content: ReactNode;
   if (legalPage) content = <Legal slug={legalPage[0]} title={legalPage[1]} />;
@@ -256,7 +257,7 @@ function App() {
           title="Histórico de precios"
           description="Consulta cuándo cambió el precio de cada combustible."
         />
-        <History stations={stations} />
+        <History key={defaultSource} stations={stations} defaultSource={defaultSource} />
       </>
     );
   else if (path === "/comparador")
@@ -266,7 +267,7 @@ function App() {
   else if (path === "/alertas")
     content = <Alerts stations={stations} pushKey={status?.pushKey ?? null} />;
   else if (path === "/mapa")
-    content = <MapPage stations={stations} prices={prices} />;
+    content = <MapPage key={defaultSource} stations={stations} prices={prices} defaultSource={defaultSource} />;
   else if (station)
     content = (
       <>
@@ -290,7 +291,7 @@ function App() {
             </a>
           </div>
         </div>
-        <History stations={stations} initial={station.slug} />
+        <History key={defaultSource} stations={stations} initial={station.slug} defaultSource={defaultSource} />
         <div className="station-actions">
           <a href={"/comparador?station=" + station.slug}>
             Comparar estaciones cercanas
@@ -429,12 +430,13 @@ function Home({
     [province, setProvince] = useState(""),
     [region, setRegion] = useState(""),
     [sort, setSort] = useState("city"),
-    [source, setSource] = useState("telegram"),
+    [selectedSource, setSource] = useState(""),
     [max, setMax] = useState(""),
     [onlyDown, setOnlyDown] = useState(false),
     [onlyFavorites, setOnlyFavorites] = useState(path === "/favoritos");
   const [position, setPosition] = useState<GeolocationCoordinates | null>(null),
     [geoError, setGeoError] = useState("");
+  const source = selectedSource || (status?.officialEnabled && !status.telegramEnabled ? "official" : "telegram");
   const list = prices.filter((p) => p.source === source);
   const gas = list.filter((p) => p.fuel === "gas95"),
     diesel = list.filter((p) => p.fuel === "diesel");
@@ -836,16 +838,18 @@ function Card({
 const initialStation = () =>
   new URLSearchParams(location.search).get("station") ?? "";
 function History({
+  defaultSource,
   stations,
   initial,
 }: {
+  defaultSource: string;
   stations: Station[];
   initial?: string;
 }) {
   const [station, setStation] = useState(initial ?? initialStation()),
     [comparison, setComparison] = useState(""),
     [fuel, setFuel] = useState("gas95"),
-    [source, setSource] = useState("telegram"),
+    [source, setSource] = useState(defaultSource),
     [days, setDays] = useState("90"),
     [start, setStart] = useState(""),
     [end, setEnd] = useState("");
@@ -1467,15 +1471,17 @@ function Calculator({
   );
 }
 function MapPage({
+  defaultSource,
   stations,
   prices,
 }: {
+  defaultSource: string;
   stations: Station[];
   prices: Price[];
 }) {
   const [station, setStation] = useState(""),
     [fuel, setFuel] = useState("gas95"),
-    [source, setSource] = useState("telegram"),
+    [source, setSource] = useState(defaultSource),
     [position, setPosition] = useState<GeolocationCoordinates | null>(null),
     [geoError, setGeoError] = useState("");
   const { data } = useNearby(station, fuel, "10");
@@ -2251,7 +2257,7 @@ function Legal({ slug, title }: { slug: string; title: string }) {
         <p>
           {brand.operator
             ? "Titular: " + brand.operator
-            : "Los datos del titular están pendientes de completar antes de la publicación."}
+            : "Los datos de contacto del titular están pendientes de configurar."}
         </p>
       </>
     ),
@@ -2289,8 +2295,7 @@ function Legal({ slug, title }: { slug: string; title: string }) {
       </p>
     ) : (
       <p>
-        El canal de contacto está pendiente de configurar antes de la
-        publicación.
+        El correo de contacto del proyecto está pendiente de configurar.
       </p>
     ),
     fuentes: (
@@ -2302,7 +2307,7 @@ function Legal({ slug, title }: { slug: string; title: string }) {
             </a>
           </li>
           <li>
-            <a href="https://geoportalgasolineras.es/">
+            <a href="https://datos.gob.es/es/catalogo/e05068001-instalaciones-de-suministro-de-combustibles-a-vehiculos-con-venta-publica">
               MITECO · precios declarados y ubicación de estaciones
             </a>
           </li>
@@ -2312,6 +2317,9 @@ function Legal({ slug, title }: { slug: string; title: string }) {
             </a>
           </li>
         </ul>
+        <p>
+          Los datos de MITECO se ofrecen bajo <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. El proyecto filtra las estaciones, normaliza los importes y calcula distancias e históricos.
+        </p>
         <p>
           Las modalidades de socios y precios declarados se muestran por
           separado. El histórico refleja las publicaciones que hayan podido
