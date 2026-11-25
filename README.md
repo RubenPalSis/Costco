@@ -59,7 +59,7 @@ D1 contiene `stations`, `fuel_types`, `observations`, `telegram_messages`, `data
 6. Para Web Push, genera un par con `node scripts/vapid.mjs`. Guarda `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY` y `VAPID_SUBJECT` con `npx wrangler secret put NOMBRE`. El asunto debe ser un contacto autorizado como `mailto:contacto@dominio.es`. No subas las claves privadas a Git.
 7. Ejecuta `npm run deploy`. Los disparadores están en Wrangler. Ejecuta la primera sincronización y las importaciones históricas con las rutas administrativas anteriores, usando el dominio desplegado. Consulta registros con `npx wrangler tail`.
 8. Comprueba el sitemap, robots, la actualización de precios, el mapa y una notificación real. En iOS y iPadOS, Web Push requiere iOS/iPadOS 16.4 o superior y añadir la web a la pantalla de inicio. En otros sistemas depende del navegador, HTTPS y el permiso de notificaciones.
-9. Verifica el prefijo de URL en Google Search Console y envía `/sitemap.xml`. Para GitHub Actions, configura el ID y token de Cloudflare como secretos, `D1_DATABASE_ID` como variable, y habilita `ALLOW_CLOUDFLARE_DEPLOY=true` solo tras autorizar el despliegue. Ejecuta manualmente el workflow desde `main`.
+9. Verifica el prefijo de URL en Google Search Console y envía `/sitemap.xml`. Para GitHub Actions, sigue la configuración del flujo de publicación al final de este README.
 
 ### Presupuesto
 
