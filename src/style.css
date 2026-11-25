@@ -413,7 +413,7 @@ select {
   color: var(--link);
   font-size: 0.8rem;
 }
-.station-heading h3 {
+.station-heading h2 {
   margin: 0;
   font-size: 1.18rem;
 }

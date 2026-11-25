@@ -191,7 +191,17 @@ function App() {
   let content: ReactNode;
   if (legalPage) content = <Legal slug={legalPage[0]} title={legalPage[1]} />;
   else if (path === "/admin") content = <Admin />;
-  else if (path === "/" || path === "/historico")
+  else if (path === "/")
+    content = (
+      <CurrentPrices
+        stations={stations}
+        prices={member}
+        favorites={favorites}
+        toggle={toggle}
+        loading={loading}
+      />
+    );
+  else if (path === "/historico")
     content = (
       <>
         <Heading
@@ -323,6 +333,107 @@ function Metric({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function CurrentPrices({
+  stations,
+  prices,
+  favorites,
+  toggle,
+  loading,
+}: {
+  stations: Station[];
+  prices: Price[];
+  favorites: string[];
+  toggle: (slug: string) => void;
+  loading: boolean;
+}) {
+  return (
+    <>
+      <Heading label="Costco España" title="Precios por estación" />
+      {loading ? (
+        <Loading />
+      ) : stations.length ? (
+        <div className="cards">
+          {stations.map((station) => {
+            const rows = prices.filter(
+              (price) => price.station === station.slug,
+            );
+            const verified = rows
+              .map((price) => price.verified_at ?? price.published_at)
+              .sort()
+              .at(-1);
+            const saved = favorites.includes(station.slug);
+            return (
+              <article className="panel station-card" key={station.slug}>
+                <div className="station-heading">
+                  <div>
+                    <p>{station.province}</p>
+                    <h2>{station.name}</h2>
+                  </div>
+                  <button
+                    className="icon"
+                    aria-label={
+                      saved ? "Quitar de favoritos" : "Guardar en favoritos"
+                    }
+                    aria-pressed={saved}
+                    onClick={() => toggle(station.slug)}
+                  >
+                    <Heart size={19} fill={saved ? "currentColor" : "none"} />
+                  </button>
+                </div>
+                {verified && (
+                  <div className="price-source">
+                    <span>Precios para socios</span>
+                    <time dateTime={verified}>{stamp(verified)}</time>
+                  </div>
+                )}
+                {rows.length ? (
+                  <div className="price-group">
+                    {rows.map((price) => (
+                      <div className="price-row" key={price.fuel}>
+                        <div>
+                          <strong>
+                            {price.fuel_name ?? fuels[price.fuel] ?? price.fuel}
+                          </strong>
+                          <small>
+                            Último cambio · {stamp(price.published_at)}
+                          </small>
+                        </div>
+                        <div className="price-number">
+                          <strong>
+                            {euros(price.price / 1000)}
+                            <small>/L</small>
+                          </strong>
+                          {!!price.variation && (
+                            <small
+                              className={price.variation < 0 ? "down" : "up"}
+                            >
+                              {price.variation > 0 ? "+" : ""}
+                              {euros(price.variation / 1000)}
+                            </small>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">Sin precios verificados.</p>
+                )}
+                <div className="station-actions">
+                  <a href={"/historico?station=" + station.slug}>
+                    Ver histórico
+                  </a>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <Empty>Los precios aparecerán cuando haya datos de estaciones.</Empty>
+      )}
+    </>
   );
 }
 

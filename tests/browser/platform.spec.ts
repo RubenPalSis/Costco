@@ -44,7 +44,7 @@ test.beforeEach(async ({ page }) => {
 test("consulta precios y conserva favoritos al navegar", async ({ page }) => {
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Histórico de precios", level: 1 }),
+    page.getByRole("heading", { name: "Precios por estación", level: 1 }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Guardar en favoritos" }).click();
   await page.goto("/favoritos");
@@ -77,8 +77,13 @@ test("la portada prescinde del bloque promocional y de los apartados retirados",
 }) => {
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Histórico de precios", level: 1 }),
+    page.getByRole("heading", { name: "Precios por estación", level: 1 }),
   ).toBeVisible();
+  const card = page.getByRole("article").filter({ hasText: "Costco Getafe" });
+  await expect(card.getByText("1,200")).toBeVisible();
+  await expect(
+    card.getByRole("link", { name: "Ver histórico" }),
+  ).toHaveAttribute("href", "/historico?station=getafe");
   await expect(page.locator(".hero")).toHaveCount(0);
   const nav = page.getByRole("navigation", { name: "Principal" });
   for (const label of ["Gasolineras", "Mapa", "Comparador", "Alertas"])
