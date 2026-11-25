@@ -361,6 +361,9 @@ function App() {
               {brand.name}
             </a>
             <p>Proyecto personal e independiente de Costco.</p>
+            <p>
+              Desarrollado por <a href="https://zetaweb.es/">zetaweb.es</a>
+            </p>
           </div>
           <nav aria-label="Información legal">
             {legal.map(([url, label]) => (

@@ -193,7 +193,7 @@ export async function publicPage(request: Request, env: Env) {
             escape(independenceNotice) +
             "</aside>" +
             content +
-            "</main>",
+            '</main><footer class="shell"><p>Desarrollado por <a href="https://zetaweb.es/">zetaweb.es</a></p></footer>',
           { html: true },
         );
       },

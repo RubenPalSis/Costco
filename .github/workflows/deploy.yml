@@ -60,6 +60,7 @@ jobs:
           curl -fsS --retry 6 --retry-all-errors --retry-delay 5 "$SITE_URL/" -o /tmp/costco-site.html
           grep -q 'Proyecto independiente' /tmp/costco-site.html
           grep -q 'https://t.me/costco_gasolineras' /tmp/costco-site.html
+          grep -q 'Desarrollado por <a href="https://zetaweb.es/">zetaweb.es' /tmp/costco-site.html
           curl -fsS --retry 3 "$SITE_URL/api/v1/status" | jq -e '.telegramEnabled == false and (has("officialEnabled") | not)'
           curl -fsS --retry 3 "$SITE_URL/api/v1/sources" | jq -e '[.data[].id] == ["telegram"]'
           curl -fsS --retry 3 "$SITE_URL/api/v1/prices" | jq -e 'all(.data[]; .source == "telegram")'
