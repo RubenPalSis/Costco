@@ -77,20 +77,35 @@ if (process.argv[2] === "database") {
   const workerUrl = `https://${name}.${domain.subdomain}.workers.dev`;
   const customUrl = "https://costgas.zetaweb.es";
   let publicUrl = workerUrl;
-  try {
-    const status = await fetch(customUrl + "/api/v1/status", {
-      redirect: "error",
-      signal: AbortSignal.timeout(5000),
-    });
-    if (
-      status.ok &&
-      status.headers.get("X-CostGas-Gateway") === "pages" &&
-      (await status.json()).telegramEnabled === true
-    )
-      publicUrl = customUrl;
-  } catch {
-    // The Worker URL remains canonical while DNS and HTTPS are pending.
+  const requireCustom = process.env.REQUIRE_CUSTOM_DOMAIN === "true";
+  const attempts = requireCustom ? 36 : 1;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const status = await fetch(customUrl + "/api/v1/status", {
+        redirect: "error",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (
+        status.ok &&
+        status.headers.get("X-CostGas-Gateway") === "pages" &&
+        (await status.json()).telegramEnabled === true
+      ) {
+        publicUrl = customUrl;
+        break;
+      }
+    } catch {
+      // DNS and TLS may still be initializing.
+    }
+    if (attempt < attempts) {
+      if (attempt === 1 || attempt % 6 === 0)
+        console.log("Esperando el HTTPS de " + customUrl);
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+    }
   }
+  if (requireCustom && publicUrl !== customUrl)
+    throw new Error(
+      "El dominio no responde por HTTPS. La dirección principal no se modificó.",
+    );
   await appendFile(GITHUB_OUTPUT, `url=${publicUrl}\n`);
 } else {
   throw new Error("Indica database o workers.");

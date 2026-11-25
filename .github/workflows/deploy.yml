@@ -3,6 +3,7 @@ on:
   push:
     tags:
       - "publicar-v*"
+      - "publicar-dominio-v*"
   workflow_dispatch:
 permissions:
   contents: read
@@ -44,6 +45,7 @@ jobs:
       - name: Comprobar el subdominio de Workers
         id: cloudflare
         env:
+          REQUIRE_CUSTOM_DOMAIN: ${{ startsWith(github.ref_name, 'publicar-dominio-v') }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/cloudflare-production.mjs workers
