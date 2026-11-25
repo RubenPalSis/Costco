@@ -14,12 +14,22 @@ async function cloudflare(path, options) {
   const result = await response.json().catch(() => null);
   if (!response.ok || !result?.success) {
     const codes = result?.errors?.map(error => String(error.code)).join(", ") || "sin código";
-    throw new Error(`Cloudflare ${path.split("?")[0]}: HTTP ${response.status} (errores: ${codes})`);
+    throw Object.assign(new Error(`Cloudflare ${path.split("?")[0]}: HTTP ${response.status} (errores: ${codes})`), {status:response.status,codes});
   }
   return result.result;
 }
 
-const domain = await cloudflare("workers/subdomain");
+let domain;
+try {
+  domain = await cloudflare("workers/subdomain");
+} catch (error) {
+  if (error.status !== 404 || !error.codes.split(", ").includes("10007")) throw error;
+}
+if (!domain?.subdomain) {
+  domain = await cloudflare("workers/subdomain", {
+    method: "PUT", body: JSON.stringify({ subdomain: "ahorrocarburante-rubenpalsis" }),
+  });
+}
 if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(domain?.subdomain ?? ""))
   throw new Error("Activa el subdominio gratuito workers.dev en la sección Workers & Pages de Cloudflare.");
 
