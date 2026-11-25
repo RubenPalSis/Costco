@@ -1,4 +1,4 @@
-name: Conectar costco.zetaweb.es
+name: Conectar costgas.zetaweb.es
 on:
   push:
     tags: ["dominio-v*"]

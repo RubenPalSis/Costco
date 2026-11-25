@@ -75,7 +75,7 @@ if (process.argv[2] === "database") {
     );
 
   const workerUrl = `https://${name}.${domain.subdomain}.workers.dev`;
-  const customUrl = "https://costco.zetaweb.es";
+  const customUrl = "https://costgas.zetaweb.es";
   let publicUrl = workerUrl;
   try {
     const status = await fetch(customUrl + "/api/v1/status", {

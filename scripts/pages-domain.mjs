@@ -3,7 +3,7 @@ const { CLOUDFLARE_ACCOUNT_ID: account, CLOUDFLARE_API_TOKEN: token } =
 if (!account || !token)
   throw new Error("Faltan las credenciales de Cloudflare.");
 const name = "costgas-zetaweb";
-const hostname = "costco.zetaweb.es";
+const hostname = "costgas.zetaweb.es";
 
 async function cloudflare(path, body, allowMissing = false) {
   const method = body ? "POST" : "GET";
