@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Archivo+Black&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap");
 :root {
   font-family: "DM Sans", system-ui, sans-serif;
   color: #142b46;
@@ -792,4 +792,19 @@ th {
 }
 .favorites-list li {
   padding: 14px 18px;
+}
+
+.wordmark {
+  display: inline-block;
+  font-family: "Archivo Black", "Arial Black", system-ui, sans-serif;
+  font-size: clamp(1.7rem, 3.2vw, 2.25rem);
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  color: #c20d29;
+}
+[data-theme="dark"] .wordmark,
+.site-footer .wordmark {
+  color: #ff6376;
 }

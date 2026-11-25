@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: AhorroCarburante
+  title: CostGas
   version: 1.0.0
   description: Los importes se expresan en milésimas de euro y las fechas se serializan en UTC.
 servers:

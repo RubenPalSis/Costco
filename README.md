@@ -1,6 +1,6 @@
-# AhorroCarburante
+# CostGas
 
-**Proyecto personal e independiente.** AhorroCarburante se creó por iniciativa propia de un usuario particular que no trabaja para Costco. El proyecto carece de afiliación, patrocinio y respaldo de Costco. El nombre Costco se usa para identificar las gasolineras incluidas en la consulta. La independencia del proyecto y los derechos de reutilización de las fuentes se revisan por separado.
+**Proyecto personal e independiente.** CostGas se creó por iniciativa propia de un usuario particular que no trabaja para Costco. El proyecto carece de afiliación, patrocinio y respaldo de Costco. El nombre Costco se usa para identificar las gasolineras incluidas en la consulta. La independencia del proyecto y los derechos de reutilización de las fuentes se revisan por separado.
 
 Plataforma para consultar y comparar carburantes de Costco España. React, Vite, TypeScript, Hono, Workers Static Assets y D1. Leaflet carga el mapa y Recharts carga las gráficas bajo demanda. No requiere un servidor local tras el despliegue.
 

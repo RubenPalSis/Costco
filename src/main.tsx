@@ -243,7 +243,7 @@ function App() {
             <span>
               <Fuel size={21} />
             </span>
-            {brand.name}
+            <strong className="wordmark">{brand.name}</strong>
           </a>
           <button
             className="icon menu-toggle"
@@ -299,7 +299,7 @@ function App() {
               <span>
                 <Fuel size={18} />
               </span>
-              {brand.name}
+              <strong className="wordmark">{brand.name}</strong>
             </a>
             <p>Precios de combustible para socios de Costco en España.</p>
           </div>

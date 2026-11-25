@@ -1,4 +1,4 @@
-export const brand = { name: "AhorroCarburante", contact: "", operator: "" };
+export const brand = { name: "CostGas", contact: "", operator: "" };
 export const fuels: Record<string, string> = {
   gas95: "Gasolina 95",
   diesel: "Diésel Plus",

@@ -33,7 +33,7 @@ const pages: Record<string, [string, string]> = {
   ],
   "/contacto": [
     "Contacto",
-    "Información de contacto del proyecto independiente AhorroCarburante.",
+    "Información de contacto del proyecto independiente CostGas.",
   ],
   "/fuentes": [
     "Fuentes de información",
@@ -158,7 +158,7 @@ export async function publicPage(request: Request, env: Env) {
   }
   const documentTitle =
     (path === "/" ? "Precios de gasolina y diésel Costco en España" : title) +
-    " | AhorroCarburante";
+    " | CostGas";
   return new HTMLRewriter()
     .on("title", {
       element(el) {
@@ -189,7 +189,7 @@ export async function publicPage(request: Request, env: Env) {
           `<main class="shell"><nav aria-label="Navegación">${navLinks}</nav>
       <aside class="notice independence" aria-label="Proyecto independiente">${independenceNotice}</aside>
       <h1>${escape(title)}</h1><p>${escape(description)}</p>${detail}</main>
-      <footer class="site-footer"><div class="shell footer-grid"><div class="footer-intro"><a class="brand" href="/">AhorroCarburante</a><p>Precios de combustible para socios de Costco en España.</p></div>
+      <footer class="site-footer"><div class="shell footer-grid"><div class="footer-intro"><a class="brand" href="/"><strong class="wordmark">CostGas</strong></a><p>Precios de combustible para socios de Costco en España.</p></div>
       <nav aria-label="Explorar el sitio"><h2>Explorar</h2>${navLinks}</nav><nav aria-label="Información del sitio"><h2>Información</h2>${legalLinks}</nav></div>
       <div class="shell footer-bottom"><p>Proyecto personal e independiente de Costco.</p><p>Desarrollado por <a href="https://zetaweb.es/">zetaweb.es</a></p></div></footer>`,
           { html: true },

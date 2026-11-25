@@ -74,10 +74,24 @@ if (process.argv[2] === "database") {
       "Activa el subdominio gratuito workers.dev en la sección Workers & Pages de Cloudflare.",
     );
 
-  await appendFile(
-    GITHUB_OUTPUT,
-    `url=https://${name}.${domain.subdomain}.workers.dev\n`,
-  );
+  const workerUrl = `https://${name}.${domain.subdomain}.workers.dev`;
+  const customUrl = "https://costco.zetaweb.es";
+  let publicUrl = workerUrl;
+  try {
+    const status = await fetch(customUrl + "/api/v1/status", {
+      redirect: "error",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (
+      status.ok &&
+      status.headers.get("X-CostGas-Gateway") === "pages" &&
+      (await status.json()).telegramEnabled === true
+    )
+      publicUrl = customUrl;
+  } catch {
+    // The Worker URL remains canonical while DNS and HTTPS are pending.
+  }
+  await appendFile(GITHUB_OUTPUT, `url=${publicUrl}\n`);
 } else {
   throw new Error("Indica database o workers.");
 }
