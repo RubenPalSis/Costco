@@ -12,6 +12,8 @@ npm run lint
 npm test
 npm run build
 npm run db:local
+npx playwright install chromium
+npm run test:browser
 cp .dev.vars.example .dev.vars
 npm run preview
 ```
@@ -32,11 +34,19 @@ Telegram publica precios de socios con bloques de municipio y provincia, líneas
 
 El listado nacional de MITECO devolvió seis estaciones Costco en la consulta del 25 de noviembre de 2026. Los precios de gasolina 95 diferían de los publicados por Telegram el día anterior; las distintas horas impiden atribuir toda la diferencia a la modalidad. La interfaz almacena y presenta los precios por fuente. El cron oficial consulta Bizkaia, Madrid, Málaga, Sevilla y Zaragoza. El comparador indexa hasta cinco precios por combustible y radio en la provincia de la estación seleccionada, con distancias en línea recta. La detección oficial fuera de esas provincias y la cobertura interprovincial quedan pendientes. El mapa usa teselas estándar de OpenStreetMap con atribución; se requiere revisar su política de uso según el volumen de tráfico.
 
-D1 contiene `stations`, `fuel_types`, `observations`, `telegram_messages`, `data_sources`, `synchronization_logs`, `sync_state`, `users`, `sessions`, `favorites`, `push_subscriptions`, `price_alerts`, `application_settings`, `audit_logs`, `notification_logs`, `station_aliases` y `nearby_prices`. Los precios vigentes y el histórico son vistas SQL. Los favoritos se guardan en el dispositivo. La tarea diaria depura sesiones vencidas y registros operativos según sus plazos.
+D1 contiene `stations`, `fuel_types`, `observations`, `telegram_messages`, `data_sources`, `synchronization_logs`, `sync_state`, `users`, `sessions`, `favorites`, `push_subscriptions`, `price_alerts`, `application_settings`, `audit_logs`, `notification_logs`, `station_aliases` y `nearby_prices`. Los precios vigentes y el histórico son vistas SQL. La tabla adicional `sync_locks` previene la ejecución simultánea por origen. Los favoritos se guardan en el dispositivo. La tarea diaria depura sesiones vencidas y registros operativos según sus plazos.
+
+## Verificación y API
+
+- `npm test` ejecuta lógica de dominio y pruebas del Worker con Miniflare y una D1 local.
+- `COSTCO_TELEGRAM_HTML=RUTA_HTML COSTCO_OFFICIAL_JSON=RUTA_JSON npm test` añade la prueba con respuestas reales descargadas por quien ejecuta la prueba. Los archivos de las fuentes no se almacenan en GitHub.
+- `npm run test:browser` verifica favoritos, fichas y cálculo en Chromium con respuestas controladas. El envío de Web Push real requiere credenciales y un navegador compatible; sigue pendiente.
+- El contrato REST está en [public/openapi.yml](public/openapi.yml), servido en `/openapi.yml`. La portada y las fichas entregan HTML desde el Worker. Las fichas incluyen etiquetas sociales y un objeto `GasStation` al configurar `PUBLIC_URL`.
+- En este entorno, las descargas por terminal funcionaron y los extractores procesaron los archivos reales. La conexión saliente del proceso Wrangler no permitió hacer la sincronización en vivo.
 
 ## Producción gratuita
 
-1. Obtén confirmación para la publicación. Revisa las condiciones de reutilización del [Portal de MITECO](https://geoportalgasolineras.es/), las [condiciones de Telegram](https://telegram.org/tos) y las del [servidor de teselas](https://operations.osmfoundation.org/policies/tiles/). La consulta pública de Telegram no confirma el permiso de republicación. Mantén esa fuente deshabilitada hasta aclararlo.
+1. Obtén confirmación para la publicación. Revisa las condiciones de reutilización del [Portal de MITECO](https://geoportalgasolineras.es/), las [condiciones de licencia de contenido de Telegram](https://telegram.org/tos/content-licensing) y las del [servidor de teselas](https://operations.osmfoundation.org/policies/tiles/). La consulta pública de Telegram no confirma el permiso de republicación. Mantén esa fuente deshabilitada hasta aclararlo.
 2. Completa titular y contacto en `src/data.ts` y revisa los textos legales según la operación efectiva.
 3. Selecciona un plan gratuito, entra con `npx wrangler login` y crea la base con `npx wrangler d1 create costco-carburantes`.
 4. Ejecuta `node scripts/configure-d1.mjs UUID_REAL` y `npx wrangler d1 migrations apply DB --remote`.
@@ -48,9 +58,9 @@ D1 contiene `stations`, `fuel_types`, `observations`, `telegram_messages`, `data
 
 ### Presupuesto
 
-Objetivo de 0 €/mes en Cloudflare Free. Workers Free admite 100.000 peticiones diarias y 10 ms de CPU por petición o cron. D1 Free incluye 5 millones de filas leídas por día, 100.000 escritas por día y 5 GB totales. Los cron configurados producen 144 consultas programadas de Telegram y una sincronización provincial diaria de MITECO si se habilitan. Los assets atendidos directamente no consumen invocaciones de Worker. El intervalo de actualización con pestaña activa es de tres minutos; la API incluye ETag y caché privada para operaciones sensibles mediante `no-store`.
+Objetivo de 0 €/mes en Cloudflare Free. Workers Free admite 100.000 peticiones diarias y 10 ms de CPU por petición o cron. D1 Free incluye 5 millones de filas leídas por día, 100.000 escritas por día y 5 GB totales. Workers Free permite cinco disparadores cron por cuenta y 20.000 archivos estáticos por versión, de hasta 25 MiB cada uno. Se usan dos disparadores. Los cron configurados producen 144 consultas programadas de Telegram y una sincronización provincial diaria de MITECO si se habilitan. Los assets atendidos directamente no consumen invocaciones de Worker. El intervalo de actualización con pestaña activa es de tres minutos; la API incluye ETag y caché privada para operaciones sensibles mediante `no-store`.
 
-A 3 peticiones dinámicas por visita corta, el máximo teórico por peticiones sería de unas 33.000 visitas diarias. D1 puede limitar antes: con 1.000 filas leídas por visita serían unas 5.000 visitas/día, antes de reservar margen para comparador, sesiones largas y cron. Son estimaciones, no mediciones. Las vistas consultan observaciones históricas y su coste crece con la importación. Haz una prueba de carga y revisa filas leídas y CPU antes de abrir al público. Los runners estándar de GitHub Actions son gratuitos para repositorios públicos. Las fuentes deshabilitadas no generan consultas externas.
+A 3 peticiones dinámicas por visita corta, el máximo teórico por peticiones sería de unas 33.000 visitas diarias. D1 puede limitar antes: con 1.000 filas leídas por visita serían unas 5.000 visitas/día, antes de reservar margen para comparador, sesiones largas y cron. Son estimaciones, no mediciones. Las vistas consultan observaciones históricas y su coste crece con la importación. Haz una prueba de carga y revisa filas leídas y CPU antes de abrir al público. Los runners estándar de GitHub Actions son gratuitos para repositorios públicos. Las fuentes deshabilitadas no generan consultas externas. Si el consumo se acerca a los límites, configura `DEGRADED_MODE=true` para aumentar la duración de la caché de API, reducir Telegram a una consulta por hora y suspender importaciones. Turnstile y Access quedan fuera de la configuración aplicada.
 
 - [Límites de Workers](https://developers.cloudflare.com/workers/platform/limits/)
 - [Precios y cuotas de D1](https://developers.cloudflare.com/d1/platform/pricing/)

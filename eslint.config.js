@@ -1,2 +1,13 @@
-import tseslint from 'typescript-eslint';
-export default [{ ignores: ['dist/**','work/**','attachments/**','node_modules/**'] }, ...tseslint.configs.recommended];
+import tseslint from "typescript-eslint";
+export default [
+  {
+    ignores: [
+      "dist/**",
+      ".wrangler/**",
+      "work/**",
+      "attachments/**",
+      "node_modules/**",
+    ],
+  },
+  ...tseslint.configs.recommended,
+];

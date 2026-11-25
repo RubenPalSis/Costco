@@ -12,5 +12,11 @@
 - [ ] Validar Web Push real en navegador y PWA instalada en plataformas compatibles.
 - [ ] Medir consumo de CPU real de los cron y de D1 en el plan gratuito.
 - [ ] Ampliar detección de estaciones y comparación a provincias limítrofes.
-- [ ] Completar OpenAPI y optimización SEO con contenido renderizado por el servidor.
+- [x] Publicar el contrato OpenAPI y renderizar en el Worker la portada y las fichas de estación.
+- [x] Validar el parser y las escrituras D1 con respuestas descargadas de Telegram y MITECO.
+- [x] Verificar favoritos, navegación, exportación disponible y calculadora en Chromium.
+- [ ] Verificar conectividad del Worker desplegado con Telegram y MITECO. Las descargas de terminal funcionaron; la red saliente del emulador local devolvió error.
+- [ ] Ampliar la gestión administrativa a edición de estaciones, combustibles, fuentes, alias y correcciones auditadas.
+- [ ] Completar comparación histórica multiestación y medias ponderadas por duración.
+- [ ] Verificar el consumo bajo carga sostenida y evaluar Turnstile y Cloudflare Access antes de habilitar alertas a gran escala.
 - [ ] Autorizar y verificar despliegue público, Search Console e importación histórica completa disponible.

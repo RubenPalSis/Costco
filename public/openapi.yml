@@ -1,0 +1,250 @@
+openapi: 3.1.0
+info:
+  title: AhorroCarburante
+  version: 1.0.0
+  description: Los importes se expresan en milésimas de euro y las fechas se serializan en UTC.
+servers:
+  - url: /api/v1
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  responses:
+    Data:
+      description: Datos de la operación
+      content:
+        application/json:
+          schema:
+            type: object
+    Error:
+      description: Solicitud inválida o acceso restringido
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties: { error: { type: string } }
+  parameters:
+    Station:
+      name: station
+      in: query
+      schema: { type: string }
+    Fuel:
+      name: fuel
+      in: query
+      schema: { type: string, enum: [gas95, gas98, diesel, diesel-a] }
+    Source:
+      name: source
+      in: query
+      schema: { type: string, enum: [telegram, official] }
+paths:
+  /stations:
+    get:
+      summary: Estaciones activas
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, maximum: 1000 } }
+      responses: { "200": { $ref: "#/components/responses/Data" } }
+  /stations/{slug}:
+    get:
+      summary: Ficha de una estación
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        {
+          "200": { $ref: "#/components/responses/Data" },
+          "404": { $ref: "#/components/responses/Error" },
+        }
+  /prices:
+    get:
+      summary: Precios por estación, combustible y fuente
+      responses:
+        {
+          "200": { $ref: "#/components/responses/Data" },
+          "304": { description: Sin cambios },
+        }
+  /prices/history:
+    get:
+      summary: Cambios de precio en el rango seleccionado
+      parameters:
+        - { name: station, in: query, required: true, schema: { type: string } }
+        - { name: fuel, in: query, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/Source" }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 366 } }
+        - { name: offset, in: query, schema: { type: integer, maximum: 5000 } }
+      responses:
+        {
+          "200": { $ref: "#/components/responses/Data" },
+          "400": { $ref: "#/components/responses/Error" },
+        }
+  /prices/cheapest:
+    get:
+      summary: Precio más bajo de la fuente seleccionada
+      parameters:
+        - { $ref: "#/components/parameters/Fuel" }
+        - { $ref: "#/components/parameters/Source" }
+      responses: { "200": { $ref: "#/components/responses/Data" } }
+  /compare:
+    get:
+      summary: Compara precios de Costco o cercanos a una estación
+      parameters:
+        - { $ref: "#/components/parameters/Station" }
+        - { $ref: "#/components/parameters/Fuel" }
+        - {
+            name: radius,
+            in: query,
+            schema: { type: integer, enum: [5, 10, 20, 50] },
+          }
+      responses:
+        {
+          "200": { $ref: "#/components/responses/Data" },
+          "400": { $ref: "#/components/responses/Error" },
+        }
+  /statistics:
+    get:
+      summary: Estadísticas de precios vigentes por fuente y combustible
+      responses: { "200": { $ref: "#/components/responses/Data" } }
+  /status:
+    get:
+      summary: Estado de las fuentes y clave VAPID pública
+      responses: { "200": { $ref: "#/components/responses/Data" } }
+  /sources:
+    get:
+      summary: Fuentes y modalidades comerciales
+      responses: { "200": { $ref: "#/components/responses/Data" } }
+  /push/subscribe:
+    post:
+      summary: Registra una suscripción Push para la sesión
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint, keys]
+              properties:
+                endpoint: { type: string, format: uri }
+                keys:
+                  type: object
+                  required: [p256dh, auth]
+                  properties:
+                    { p256dh: { type: string }, auth: { type: string } }
+      responses:
+        {
+          "201": { $ref: "#/components/responses/Data" },
+          "400": { $ref: "#/components/responses/Error" },
+        }
+  /push/unsubscribe:
+    post:
+      summary: Elimina la suscripción, sesión y alertas propias
+      security: [{ bearer: [] }]
+      responses:
+        {
+          "200": { $ref: "#/components/responses/Data" },
+          "401": { $ref: "#/components/responses/Error" },
+        }
+  /alerts:
+    get:
+      summary: Lista las alertas propias
+      security: [{ bearer: [] }]
+      responses: { "200": { $ref: "#/components/responses/Data" } }
+    post:
+      summary: Crea una alerta
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [station, fuel, kind]
+              properties:
+                station: { type: string }
+                fuel: { type: string }
+                kind:
+                  { type: string, enum: [lower, higher, threshold, minimum] }
+                threshold:
+                  { type: [integer, "null"], minimum: 300, maximum: 5000 }
+      responses:
+        {
+          "201": { $ref: "#/components/responses/Data" },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /alerts/{id}:
+    parameters:
+      - {
+          name: id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    patch:
+      summary: Actualiza el criterio de una alerta propia
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind:
+                  { type: string, enum: [lower, higher, threshold, minimum] }
+                threshold:
+                  { type: [integer, "null"], minimum: 300, maximum: 5000 }
+      responses:
+        {
+          "200": { $ref: "#/components/responses/Data" },
+          "404": { $ref: "#/components/responses/Error" },
+        }
+    delete:
+      summary: Elimina una alerta propia
+      security: [{ bearer: [] }]
+      responses:
+        {
+          "204": { description: Alerta eliminada },
+          "404": { $ref: "#/components/responses/Error" },
+        }
+  /admin/sync:
+    post:
+      summary: Ejecuta una sincronización de la fuente habilitada
+      security: [{ bearer: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/Source" }
+      responses:
+        {
+          "200": { $ref: "#/components/responses/Data" },
+          "401": { $ref: "#/components/responses/Error" },
+        }
+  /admin/import:
+    post:
+      summary: Importa una página de Telegram y avanza el cursor
+      security: [{ bearer: [] }]
+      responses:
+        {
+          "200": { $ref: "#/components/responses/Data" },
+          "401": { $ref: "#/components/responses/Error" },
+        }
+  /admin/logs:
+    get:
+      summary: Últimos registros de sincronización
+      security: [{ bearer: [] }]
+      responses:
+        {
+          "200": { $ref: "#/components/responses/Data" },
+          "401": { $ref: "#/components/responses/Error" },
+        }
+  /admin/overview:
+    get:
+      summary: Métricas y últimos mensajes procesados
+      security: [{ bearer: [] }]
+      responses:
+        {
+          "200": { $ref: "#/components/responses/Data" },
+          "401": { $ref: "#/components/responses/Error" },
+        }
