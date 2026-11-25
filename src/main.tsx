@@ -1,35 +1,19 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  ArrowDown,
-  ArrowRight,
-  ArrowUp,
-  Bell,
-  Fuel,
-  Heart,
-  MapPin,
-  Menu,
-  Moon,
-  Sun,
-  TrendingDown,
-} from "lucide-react";
+import { Fuel, Heart, Menu, Moon, Sun } from "lucide-react";
 import {
   api,
   brand,
   euros,
   fuels,
-  maps,
   savings,
   stamp,
   type Price,
   type Station,
-  type Status,
 } from "./data";
-import { distance } from "../worker/distance";
 import { independenceNotice } from "./identity";
 import "./style.css";
 
-const FuelMap = lazy(() => import("./map"));
 const HistoryChart = lazy(() =>
   import("./charts").then((module) => ({ default: module.HistoryChart })),
 );
@@ -38,12 +22,8 @@ const SavingsChart = lazy(() =>
 );
 const nav = [
   ["/", "Inicio"],
-  ["/gasolineras", "Gasolineras"],
-  ["/mapa", "Mapa"],
   ["/historico", "Histórico"],
-  ["/comparador", "Comparador"],
   ["/calculadora", "Calculadora"],
-  ["/alertas", "Alertas"],
   ["/favoritos", "Favoritos"],
 ];
 const legal = [
@@ -55,7 +35,6 @@ const legal = [
   ["fuentes", "Fuentes"],
   ["sobre-nosotros", "Sobre nosotros"],
 ];
-const sourceName = () => "Socios · Telegram";
 function readFavorites(): string[] {
   try {
     const value: unknown = JSON.parse(
@@ -141,8 +120,7 @@ function Loading() {
 function App() {
   const path = location.pathname.replace(/\/$/, "") || "/";
   const [stations, setStations] = useState<Station[]>([]),
-    [prices, setPrices] = useState<Price[]>([]),
-    [status, setStatus] = useState<Status | null>(null);
+    [prices, setPrices] = useState<Price[]>([]);
   const [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [menu, setMenu] = useState(false);
@@ -164,15 +142,13 @@ function App() {
     async function refresh() {
       if (document.hidden) return;
       try {
-        const [s, p, t] = await Promise.all([
+        const [s, p] = await Promise.all([
           api<{ data: Station[] }>("/stations"),
           api<{ data: Price[] }>("/prices"),
-          api<Status>("/status"),
         ]);
         if (active) {
           setStations(s.data);
           setPrices(p.data);
-          setStatus(t);
           setError("");
         }
       } catch (e) {
@@ -196,10 +172,8 @@ function App() {
         ? current.filter((s) => s !== slug)
         : [...current, slug],
     );
-  const station = stations.find((s) => path === "/gasolineras/" + s.slug);
   useEffect(() => {
     const label =
-      station?.name ??
       nav.find(([url]) => url === path)?.[1] ??
       legal.find(([url]) => "/" + url === path)?.[1];
     if (label && path !== "/") document.title = label + " | " + brand.name;
@@ -211,13 +185,13 @@ function App() {
     return () => {
       canonical.remove();
     };
-  }, [path, station]);
+  }, [path]);
   const member = prices.filter((p) => p.source === "telegram");
   const legalPage = legal.find(([url]) => "/" + url === path);
   let content: ReactNode;
   if (legalPage) content = <Legal slug={legalPage[0]} title={legalPage[1]} />;
   else if (path === "/admin") content = <Admin />;
-  else if (path === "/historico" || path === "/comparador")
+  else if (path === "/" || path === "/historico")
     content = (
       <>
         <Heading
@@ -225,60 +199,25 @@ function App() {
           title="Histórico de precios"
           description="Consulta cuándo cambió el precio de cada combustible."
         />
-        <History stations={stations} />
+        <History stations={stations} favorites={favorites} toggle={toggle} />
       </>
     );
   else if (path === "/calculadora")
     content = <Calculator stations={stations} prices={member} />;
-  else if (path === "/alertas")
-    content = <Alerts stations={stations} pushKey={status?.pushKey ?? null} />;
-  else if (path === "/mapa")
-    content = <MapPage stations={stations} prices={prices} />;
-  else if (station)
+  else if (path === "/favoritos")
     content = (
       <>
-        <Heading
-          label={station.province}
-          title={station.name}
-          description={station.address ?? station.city}
-        />
-        <div className="detail-grid">
-          <Card
-            station={station}
-            prices={prices}
-            saved={favorites.includes(station.slug)}
+        <Heading label="Tus estaciones" title="Favoritos" />
+        {loading ? (
+          <Loading />
+        ) : (
+          <Favorites
+            stations={stations}
+            favorites={favorites}
             toggle={toggle}
           />
-          <div className="panel">
-            <h2>Horario y ubicación</h2>
-            <p>{station.hours ?? "Horario sin confirmar"}</p>
-            <a href={maps(station)}>
-              Ver indicaciones <ArrowRight size={16} />
-            </a>
-          </div>
-        </div>
-        <History stations={stations} initial={station.slug} />
-        <div className="station-actions">
-          <a href={"/comparador?station=" + station.slug}>
-            Comparar estaciones Costco
-          </a>
-          <a href={"/calculadora?station=" + station.slug}>Calcular ahorro</a>
-          <a href={"/alertas?station=" + station.slug}>Crear alerta</a>
-          <a href="/mapa">Ver mapa</a>
-        </div>
+        )}
       </>
-    );
-  else if (["/", "/gasolineras", "/favoritos"].includes(path))
-    content = (
-      <Home
-        path={path}
-        stations={stations}
-        prices={prices}
-        status={status}
-        loading={loading}
-        favorites={favorites}
-        toggle={toggle}
-      />
     );
   else
     content = loading ? (
@@ -378,308 +317,6 @@ function App() {
   );
 }
 
-function Home({
-  path,
-  stations,
-  prices,
-  status,
-  loading,
-  favorites,
-  toggle,
-}: {
-  path: string;
-  stations: Station[];
-  prices: Price[];
-  status: Status | null;
-  loading: boolean;
-  favorites: string[];
-  toggle: (s: string) => void;
-}) {
-  const [fuel, setFuel] = useState("gas95"),
-    [province, setProvince] = useState(""),
-    [region, setRegion] = useState(""),
-    [sort, setSort] = useState("city"),
-    [max, setMax] = useState(""),
-    [onlyDown, setOnlyDown] = useState(false),
-    [onlyFavorites, setOnlyFavorites] = useState(path === "/favoritos");
-  const [position, setPosition] = useState<GeolocationCoordinates | null>(null),
-    [geoError, setGeoError] = useState("");
-  const source = "telegram";
-  const list = prices.filter((p) => p.source === source);
-  const gas = list.filter((p) => p.fuel === "gas95"),
-    diesel = list.filter((p) => p.fuel === "diesel");
-  const least = (values: Price[]) =>
-    values.length ? euros(Math.min(...values.map((p) => p.price)) / 1000) : "—";
-  const mean = gas.length
-    ? euros(gas.reduce((sum, p) => sum + p.price, 0) / gas.length / 1000)
-    : "—";
-  const newest = list
-    .map((p) => p.verified_at ?? p.published_at)
-    .sort()
-    .at(-1);
-  const stale = newest && Date.now() - Date.parse(newest) > 48 * 3600000;
-  const shown = stations
-    .map((station) => {
-      const price = list.find(
-        (p) => p.station === station.slug && p.fuel === fuel,
-      );
-      const km =
-        position && station.latitude !== null && station.longitude !== null
-          ? distance(
-              position.latitude,
-              position.longitude,
-              station.latitude,
-              station.longitude,
-            )
-          : Infinity;
-      return { station, price, km };
-    })
-    .filter(
-      ({ station, price }) =>
-        (!province || station.province === province) &&
-        (!region || station.region === region) &&
-        (!onlyFavorites || favorites.includes(station.slug)) &&
-        (!max || (price !== undefined && price.price <= Number(max) * 1000)) &&
-        (!onlyDown || (price?.variation ?? 0) < 0),
-    );
-  shown.sort((a, b) => {
-    if (sort === "distance") return a.km - b.km;
-    if (sort === "updated")
-      return (b.price?.verified_at ?? "").localeCompare(
-        a.price?.verified_at ?? "",
-      );
-    if (sort === "lower" || sort === "higher")
-      return (
-        ((a.price?.variation ?? 0) - (b.price?.variation ?? 0)) *
-        (sort === "lower" ? 1 : -1)
-      );
-    if (sort === "price" || sort === "expensive") {
-      if (!a.price) return 1;
-      if (!b.price) return -1;
-      return (a.price.price - b.price.price) * (sort === "price" ? 1 : -1);
-    }
-    return a.station.city.localeCompare(b.station.city, "es");
-  });
-  return (
-    <>
-      {path === "/" ? (
-        <section className="hero">
-          <div>
-            <span className="eyebrow">Costco España</span>
-            <h1>
-              Precios de combustible,
-              <br />
-              <em>estación por estación.</em>
-            </h1>
-            <p>
-              Consulta los precios de Costco, compara estaciones Costco y
-              calcula cuánto puedes ahorrar al repostar.
-            </p>
-            <div className="actions">
-              <a className="button mint" href="#gasolineras">
-                Ver precios Costco <ArrowRight size={17} />
-              </a>
-              <a className="button ghost" href="/mapa">
-                <MapPin size={17} /> Explorar el mapa
-              </a>
-            </div>
-          </div>
-          <div className="hero-side">
-            <span className="hero-icon">
-              <Fuel size={68} strokeWidth={1.1} />
-            </span>
-            <div>
-              <span>Gasolina 95 más barata</span>
-              <strong>
-                {least(gas)}
-                {gas.length > 0 && <small> / L</small>}
-              </strong>
-              <span>{sourceName()}</span>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <Heading
-          label="Costco España"
-          title={
-            path === "/favoritos"
-              ? "Tus gasolineras favoritas"
-              : "Gasolineras Costco"
-          }
-          description={
-            path === "/favoritos"
-              ? "Las estaciones que guardas en este dispositivo."
-              : "Precios y ubicaciones en España."
-          }
-        />
-      )}
-      <div className="metrics">
-        <Metric label="Gasolina 95 más barata" value={least(gas)} />
-        <Metric label="Diésel Plus más barato" value={least(diesel)} />
-        <Metric label="Media de gasolina 95" value={mean} />
-        <Metric
-          label="Gasolineras disponibles"
-          value={String(stations.length)}
-        />
-      </div>
-      <div className="source-line">
-        <span>
-          <span className={stale ? "dot stale" : "dot"} />
-          {newest
-            ? (stale ? "Datos antiguos · " : "Verificado · ") + stamp(newest)
-            : "Sin precios verificados todavía"}
-        </span>
-        <span>
-          <TrendingDown size={17} />{" "}
-          {
-            new Set(
-              list.filter((p) => (p.variation ?? 0) < 0).map((p) => p.station),
-            ).size
-          }{" "}
-          con bajadas ·{" "}
-          {
-            new Set(
-              list.filter((p) => (p.variation ?? 0) > 0).map((p) => p.station),
-            ).size
-          }{" "}
-          con subidas
-        </span>
-      </div>
-      {status && (
-        <div className="source-line">
-          <span>
-            {status.data.find((record) => record.source === "telegram")
-              ?.last_success
-              ? "Precios de socios sincronizados"
-              : "Pendiente de la primera actualización de precios"}
-          </span>
-        </div>
-      )}
-      <section id="gasolineras">
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">Consulta por ubicación</span>
-            <h2>
-              {path === "/favoritos"
-                ? "Estaciones guardadas"
-                : "Todas las gasolineras"}
-            </h2>
-          </div>
-          <span>{shown.length} estaciones</span>
-        </div>
-        <div className="panel filters">
-          <Select label="Provincia" value={province} onChange={setProvince}>
-            <option value="">Todas</option>
-            {[...new Set(stations.map((s) => s.province))].sort().map((p) => (
-              <option key={p}>{p}</option>
-            ))}
-          </Select>
-          <Select label="Comunidad" value={region} onChange={setRegion}>
-            <option value="">Todas</option>
-            {[...new Set(stations.flatMap((s) => (s.region ? [s.region] : [])))]
-              .sort()
-              .map((p) => (
-                <option key={p}>{p}</option>
-              ))}
-          </Select>
-          <Select label="Combustible" value={fuel} onChange={setFuel}>
-            <FuelOptions />
-          </Select>
-          <Select label="Orden" value={sort} onChange={setSort}>
-            <option value="city">Ciudad</option>
-            <option value="price">Menor precio</option>
-            <option value="expensive">Mayor precio</option>
-            <option value="updated">Más recientes</option>
-            <option value="lower">Mayor bajada</option>
-            <option value="higher">Mayor subida</option>
-            {position && <option value="distance">Cercanía</option>}
-          </Select>
-          <label>
-            Máximo €/L
-            <input
-              type="number"
-              min="0"
-              step=".001"
-              value={max}
-              onChange={(e) => setMax(e.target.value)}
-            />
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={onlyDown}
-              onChange={(e) => setOnlyDown(e.target.checked)}
-            />{" "}
-            Con bajadas
-          </label>
-          {path !== "/favoritos" && (
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={onlyFavorites}
-                onChange={(e) => setOnlyFavorites(e.target.checked)}
-              />{" "}
-              Solo favoritos
-            </label>
-          )}
-          <button
-            className="button"
-            onClick={() =>
-              locate((p) => {
-                setPosition(p);
-                setSort("distance");
-                setGeoError("");
-              }, setGeoError)
-            }
-          >
-            <MapPin size={16} /> Cerca de mí
-          </button>
-        </div>
-        {geoError && <p role="status">{geoError}</p>}
-        {loading ? (
-          <div className="cards">
-            <Loading />
-            <Loading />
-            <Loading />
-          </div>
-        ) : shown.length ? (
-          <div className="cards">
-            {shown.map(({ station, km }) => (
-              <Card
-                key={station.slug}
-                station={station}
-                prices={prices}
-                saved={favorites.includes(station.slug)}
-                toggle={toggle}
-                km={km}
-              />
-            ))}
-          </div>
-        ) : (
-          <Empty>
-            {stations.length
-              ? "Ninguna estación coincide con los filtros."
-              : "Los precios de socios aparecerán tras la primera actualización."}
-          </Empty>
-        )}
-      </section>
-    </>
-  );
-}
-function locate(
-  success: (p: GeolocationCoordinates) => void,
-  failure: (message: string) => void,
-) {
-  if (!navigator.geolocation) {
-    failure("El navegador no ofrece geolocalización.");
-    return;
-  }
-  navigator.geolocation.getCurrentPosition(
-    (p) => success(p.coords),
-    () => failure("No se pudo obtener tu ubicación."),
-    { timeout: 7000, maximumAge: 120000 },
-  );
-}
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="metric">
@@ -688,111 +325,50 @@ function Metric({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-function Card({
-  station,
-  prices,
-  saved,
+
+function Favorites({
+  stations,
+  favorites,
   toggle,
-  km,
 }: {
-  station: Station;
-  prices: Price[];
-  saved: boolean;
-  toggle: (s: string) => void;
-  km?: number;
+  stations: Station[];
+  favorites: string[];
+  toggle: (slug: string) => void;
 }) {
-  const rows = prices.filter((p) => p.station === station.slug);
-  return (
-    <article className="panel station-card">
-      <div className="station-heading">
-        <div>
-          <p>
-            <MapPin size={15} /> {station.province}
-            {km !== undefined && Number.isFinite(km)
-              ? " · " + km.toFixed(1) + " km"
-              : ""}
-          </p>
-          <h3>
-            <a href={"/gasolineras/" + station.slug}>{station.name}</a>
-          </h3>
-        </div>
-        <button
-          className="icon"
-          aria-label={saved ? "Quitar de favoritos" : "Guardar en favoritos"}
-          aria-pressed={saved}
-          onClick={() => toggle(station.slug)}
-        >
-          <Heart size={19} fill={saved ? "currentColor" : "none"} />
-        </button>
-      </div>
-      {["telegram"].map((source) => {
-        const group = rows.filter((p) => p.source === source);
-        return (
-          group.length > 0 && (
-            <div className="price-group" key={source}>
-              <div className="price-source">
-                <span>{sourceName()}</span>
-                <span title="Última verificación">
-                  {stamp(
-                    group
-                      .map((p) => p.verified_at ?? p.published_at)
-                      .sort()
-                      .at(-1)!,
-                  )}
-                </span>
-              </div>
-              {group.map((p) => (
-                <div className="price-row" key={p.fuel}>
-                  <div>
-                    <strong>{p.fuel_name ?? fuels[p.fuel] ?? p.fuel}</strong>
-                    <small>Último cambio · {stamp(p.published_at)}</small>
-                  </div>
-                  <div className="price-number">
-                    <strong>
-                      {euros(p.price / 1000)}
-                      <small>/L</small>
-                    </strong>
-                    {p.previous !== null && (
-                      <small className={(p.variation ?? 0) < 0 ? "down" : "up"}>
-                        {(p.variation ?? 0) < 0 ? (
-                          <ArrowDown size={12} />
-                        ) : (
-                          <ArrowUp size={12} />
-                        )}{" "}
-                        {p.variation! > 0 ? "+" : ""}
-                        {euros((p.variation ?? 0) / 1000)} · antes{" "}
-                        {euros(p.previous / 1000)}
-                      </small>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )
-        );
-      })}
-      {!rows.length && <p className="muted">Sin precios verificados.</p>}
-      <div className="station-actions">
-        <a href={"/historico?station=" + station.slug}>Histórico</a>
-        <a href={"/comparador?station=" + station.slug}>Comparar</a>
-        <a href={maps(station)} target="_blank" rel="noreferrer">
-          Cómo llegar <ArrowRight size={14} />
-        </a>
-      </div>
-    </article>
+  const saved = stations.filter((s) => favorites.includes(s.slug));
+  return saved.length ? (
+    <ul className="favorites-list">
+      {saved.map((s) => (
+        <li key={s.slug} className="panel">
+          <a href={"/historico?station=" + s.slug}>{s.name}</a>
+          <button
+            className="icon"
+            onClick={() => toggle(s.slug)}
+            aria-label="Quitar de favoritos"
+          >
+            <Heart size={19} fill="currentColor" />
+          </button>
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <Empty>
+      Guarda estaciones desde el <a href="/historico">histórico de precios</a>.
+    </Empty>
   );
 }
 const initialStation = () =>
   new URLSearchParams(location.search).get("station") ?? "";
 function History({
   stations,
-  initial,
+  favorites,
+  toggle,
 }: {
   stations: Station[];
-  initial?: string;
+  favorites: string[];
+  toggle: (slug: string) => void;
 }) {
-  const [station, setStation] = useState(initial ?? initialStation()),
-    [comparison, setComparison] = useState(""),
+  const [station, setStation] = useState(initialStation()),
     [fuel, setFuel] = useState("gas95"),
     [days, setDays] = useState("90"),
     [start, setStart] = useState(""),
@@ -836,24 +412,14 @@ function History({
           from,
         });
         if (days === "custom") query.set("to", end);
-        const ids =
-          comparison && comparison !== selected
-            ? [selected, comparison]
-            : [selected];
-        const results = await Promise.all(
-          ids.map(async (id) => {
-            query.set("station", id);
-            const result = await api<Series>(
-              "/prices/history?" + query.toString(),
-              { signal: controller.signal },
-            );
-            return [
-              id,
-              { ...result, data: [...result.data].reverse() },
-            ] as const;
-          }),
+        const result = await api<Series>(
+          "/prices/history?" + query.toString(),
+          { signal: controller.signal },
         );
-        if (!controller.signal.aborted) setSeries(Object.fromEntries(results));
+        if (!controller.signal.aborted)
+          setSeries({
+            [selected]: { ...result, data: [...result.data].reverse() },
+          });
       } catch (e) {
         if (!controller.signal.aborted) setError((e as Error).message);
       } finally {
@@ -862,7 +428,7 @@ function History({
     }
     void load();
     return () => controller.abort();
-  }, [selected, comparison, fuel, source, days, start, end]);
+  }, [selected, fuel, source, days, start, end]);
   const main = series[selected];
   const rows = main?.data ?? [];
   const chart = Object.entries(series).map(([id, result]) => {
@@ -923,24 +489,29 @@ function History({
   }
   return (
     <section className="panel feature">
-      <h2>Evolución del precio</h2>
+      <div className="history-heading">
+        <h2>Evolución del precio</h2>
+        {selected && (
+          <button
+            className="icon"
+            onClick={() => toggle(selected)}
+            aria-pressed={favorites.includes(selected)}
+            aria-label={
+              favorites.includes(selected)
+                ? "Quitar de favoritos"
+                : "Guardar en favoritos"
+            }
+          >
+            <Heart
+              size={19}
+              fill={favorites.includes(selected) ? "currentColor" : "none"}
+            />
+          </button>
+        )}
+      </div>
       <div className="form-grid">
         <Select label="Gasolinera" value={selected} onChange={setStation}>
           <StationOptions stations={stations} />
-        </Select>
-        <Select
-          label="Comparar con"
-          value={comparison}
-          onChange={setComparison}
-        >
-          <option value="">Sin segunda estación</option>
-          {stations
-            .filter((s) => s.slug !== selected)
-            .map((s) => (
-              <option key={s.slug} value={s.slug}>
-                {s.name}
-              </option>
-            ))}
         </Select>
         <Select label="Combustible" value={fuel} onChange={setFuel}>
           <FuelOptions />
@@ -1253,337 +824,6 @@ function Calculator({
     </>
   );
 }
-function MapPage({
-  stations,
-  prices,
-}: {
-  stations: Station[];
-  prices: Price[];
-}) {
-  const [fuel, setFuel] = useState("gas95"),
-    [position, setPosition] = useState<GeolocationCoordinates | null>(null),
-    [geoError, setGeoError] = useState("");
-  const rows = prices.filter((p) => p.fuel === fuel && p.source === "telegram");
-  const cheapest = [...rows].sort((a, b) => a.price - b.price)[0];
-  const nearest = position
-    ? stations
-        .flatMap((s) =>
-          s.latitude !== null && s.longitude !== null
-            ? [
-                {
-                  s,
-                  km: distance(
-                    position.latitude,
-                    position.longitude,
-                    s.latitude,
-                    s.longitude,
-                  ),
-                },
-              ]
-            : [],
-        )
-        .sort((a, b) => a.km - b.km)[0]
-    : null;
-  return (
-    <>
-      <Heading
-        label="Encuentra tu estación"
-        title="Mapa de gasolineras"
-        description="Localiza las estaciones Costco y consulta el precio del combustible que utilizas."
-      />
-      <section className="panel feature">
-        <div className="form-grid">
-          <Select label="Combustible" value={fuel} onChange={setFuel}>
-            <FuelOptions />
-          </Select>
-          <button
-            className="button"
-            onClick={() => locate(setPosition, setGeoError)}
-          >
-            <MapPin size={17} /> Encontrar la más cercana
-          </button>
-        </div>
-        {nearest && (
-          <p>
-            Más cercana ·{" "}
-            <a href={"/gasolineras/" + nearest.s.slug}>{nearest.s.name}</a> ·{" "}
-            {nearest.km.toFixed(1)} km en línea recta
-          </p>
-        )}
-        {cheapest && (
-          <p>
-            Más económica ·{" "}
-            <a href={"/gasolineras/" + cheapest.station}>
-              {stations.find((s) => s.slug === cheapest.station)?.name ??
-                cheapest.station}
-            </a>{" "}
-            · {euros(cheapest.price / 1000)}/L
-          </p>
-        )}
-        {geoError && <p role="status">{geoError}</p>}
-        <Suspense fallback={<Loading />}>
-          <FuelMap stations={stations} prices={rows} nearby={[]} />
-        </Suspense>
-        <ul className="map-list">
-          {stations.map((s) => (
-            <li key={s.slug}>
-              <a href={maps(s)}>{s.name} · Ver indicaciones</a>
-            </li>
-          ))}
-        </ul>
-      </section>
-    </>
-  );
-}
-type Alert = {
-  id: string;
-  station: string;
-  fuel: string;
-  kind: string;
-  threshold: number | null;
-};
-const alertKinds: Record<string, string> = {
-  lower: "Bajada de precio",
-  higher: "Subida de precio",
-  threshold: "Por debajo de mi objetivo",
-  minimum: "Nuevo mínimo registrado",
-};
-function Alerts({
-  stations,
-  pushKey,
-}: {
-  stations: Station[];
-  pushKey: string | null;
-}) {
-  const [token, setToken] = useState(
-      () => localStorage.getItem("push-token") ?? "",
-    ),
-    [alerts, setAlerts] = useState<Alert[]>([]);
-  const [station, setStation] = useState(initialStation()),
-    [fuel, setFuel] = useState("gas95"),
-    [kind, setKind] = useState("lower"),
-    [threshold, setThreshold] = useState(0),
-    [notice, setNotice] = useState(""),
-    [busy, setBusy] = useState(false),
-    [editing, setEditing] = useState("");
-  const selected = station || stations[0]?.slug || "";
-  const request = (method: string, bearer: string, body?: unknown) => ({
-    method,
-    headers: {
-      authorization: "Bearer " + bearer,
-      "content-type": "application/json",
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  async function load(bearer: string) {
-    setAlerts(
-      (await api<{ data: Alert[] }>("/alerts", request("GET", bearer))).data,
-    );
-  }
-  useEffect(() => {
-    if (token)
-      void api<{ data: Alert[] }>("/alerts", request("GET", token))
-        .then((r) => setAlerts(r.data))
-        .catch((e) => setNotice(e.message));
-  }, [token]);
-  function run(action: () => Promise<void>) {
-    setBusy(true);
-    setNotice("");
-    void action()
-      .catch((e) => setNotice(e.message))
-      .finally(() => setBusy(false));
-  }
-  return (
-    <>
-      <Heading
-        label="Avisos personalizados"
-        title="Alertas de precio"
-        description="Recibe avisos en este dispositivo cuando cambie el precio para socios."
-      />
-      <section className="panel feature">
-        {notice && (
-          <p className="notice" role="status">
-            {notice}
-          </p>
-        )}
-        {!pushKey ? (
-          <Empty>El servicio de notificaciones aún no está configurado.</Empty>
-        ) : !token ? (
-          <>
-            <p>
-              Al activar los avisos, el navegador te pedirá permiso para recibir
-              notificaciones. Puedes desactivarlas desde aquí.
-            </p>
-            <button
-              className="button primary"
-              disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  if (
-                    !("serviceWorker" in navigator) ||
-                    !("PushManager" in window) ||
-                    !("Notification" in window)
-                  )
-                    throw new Error(
-                      "Este navegador no admite Web Push en este contexto.",
-                    );
-                  if ((await Notification.requestPermission()) !== "granted")
-                    throw new Error("El navegador no concedió permiso.");
-                  const sw = await navigator.serviceWorker.ready;
-                  const sub =
-                    (await sw.pushManager.getSubscription()) ??
-                    (await sw.pushManager.subscribe({
-                      userVisibleOnly: true,
-                      applicationServerKey: pushKey,
-                    }));
-                  const fresh = Array.from(
-                    crypto.getRandomValues(new Uint8Array(32)),
-                    (x) => x.toString(16).padStart(2, "0"),
-                  ).join("");
-                  await api(
-                    "/push/subscribe",
-                    request("POST", fresh, sub.toJSON()),
-                  );
-                  localStorage.setItem("push-token", fresh);
-                  setToken(fresh);
-                  setNotice("Notificaciones activadas.");
-                })
-              }
-            >
-              <Bell size={18} /> Activar notificaciones
-            </button>
-          </>
-        ) : (
-          <>
-            <h2>{editing ? "Editar alerta" : "Crear alerta"}</h2>
-            <div className="form-grid">
-              {!editing && (
-                <>
-                  <Select
-                    label="Gasolinera"
-                    value={selected}
-                    onChange={setStation}
-                  >
-                    <StationOptions stations={stations} />
-                  </Select>
-                  <Select label="Combustible" value={fuel} onChange={setFuel}>
-                    <FuelOptions />
-                  </Select>
-                </>
-              )}
-              <Select label="Avisarme cuando" value={kind} onChange={setKind}>
-                {Object.entries(alertKinds).map(([id, label]) => (
-                  <option key={id} value={id}>
-                    {label}
-                  </option>
-                ))}
-              </Select>
-              {kind === "threshold" && (
-                <NumberField
-                  label="Precio objetivo €/L"
-                  value={threshold}
-                  change={setThreshold}
-                  step=".001"
-                />
-              )}
-            </div>
-            <div className="actions">
-              <button
-                className="button primary"
-                disabled={busy || (!editing && !selected)}
-                onClick={() =>
-                  run(async () => {
-                    await api(
-                      editing ? "/alerts/" + editing : "/alerts",
-                      request(editing ? "PATCH" : "POST", token, {
-                        station: selected,
-                        fuel,
-                        kind,
-                        threshold:
-                          kind === "threshold"
-                            ? Math.round(threshold * 1000)
-                            : null,
-                      }),
-                    );
-                    setEditing("");
-                    await load(token);
-                    setNotice("Alerta guardada.");
-                  })
-                }
-              >
-                Guardar alerta
-              </button>
-              {editing && (
-                <button className="button" onClick={() => setEditing("")}>
-                  Cancelar edición
-                </button>
-              )}
-            </div>
-            <ul className="alert-list">
-              {alerts.map((a) => (
-                <li key={a.id}>
-                  <span>
-                    {stations.find((s) => s.slug === a.station)?.name ??
-                      a.station}{" "}
-                    · {fuels[a.fuel]} · {alertKinds[a.kind]}
-                    {a.threshold ? " · " + euros(a.threshold / 1000) : ""}
-                  </span>
-                  <div className="actions">
-                    <button
-                      className="button"
-                      onClick={() => {
-                        setEditing(a.id);
-                        setKind(a.kind);
-                        setThreshold((a.threshold ?? 0) / 1000);
-                      }}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      className="button"
-                      disabled={busy}
-                      onClick={() =>
-                        run(async () => {
-                          await api(
-                            "/alerts/" + a.id,
-                            request("DELETE", token),
-                          );
-                          await load(token);
-                        })
-                      }
-                    >
-                      Eliminar
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <button
-              className="button"
-              disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  await api("/push/unsubscribe", request("POST", token));
-                  const reg = await navigator.serviceWorker.getRegistration();
-                  await (
-                    await reg?.pushManager.getSubscription()
-                  )?.unsubscribe();
-                  localStorage.removeItem("push-token");
-                  setToken("");
-                  setAlerts([]);
-                  setNotice("Notificaciones desactivadas.");
-                })
-              }
-            >
-              Desactivar notificaciones
-            </button>
-          </>
-        )}
-      </section>
-    </>
-  );
-}
-
 function Admin() {
   const [token, setToken] = useState(""),
     [error, setError] = useState(""),
@@ -2025,22 +1265,15 @@ function Legal({ slug, title }: { slug: string; title: string }) {
     privacidad: (
       <>
         <p>
-          Guardamos en el navegador el tema y tus favoritos. Si activas Web
-          Push, el servicio guarda la suscripción, las alertas y una sesión
-          seudónima durante un máximo de 180 días. Puedes eliminarlos desde
-          Alertas.
-        </p>
-        <p>
-          La ubicación se solicita al pulsar un botón y se usa en el dispositivo
-          para ordenar las estaciones. El mapa solicita teselas a OpenStreetMap,
-          que recibe los datos de conexión necesarios para servirlas.
+          Guardamos en el navegador el tema y tus favoritos. La web utiliza
+          Cloudflare para servir el sitio y sus datos.
         </p>
       </>
     ),
     cookies: (
       <p>
-        La aplicación usa almacenamiento local para el tema, los favoritos y la
-        sesión de avisos. No instala cookies de publicidad ni activa analítica.
+        La aplicación usa almacenamiento local para el tema y los favoritos. No
+        instala cookies de publicidad ni activa analítica.
       </p>
     ),
     condiciones: (
@@ -2061,11 +1294,6 @@ function Legal({ slug, title }: { slug: string; title: string }) {
       <>
         <ul>
           <li>Telegram · precios para socios</li>
-          <li>
-            <a href="https://www.openstreetmap.org/copyright">
-              OpenStreetMap · cartografía
-            </a>
-          </li>
         </ul>
 
         <p>

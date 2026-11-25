@@ -44,7 +44,7 @@ test.beforeEach(async ({ page }) => {
 test("consulta precios y conserva favoritos al navegar", async ({ page }) => {
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Costco Getafe" }),
+    page.getByRole("heading", { name: "Histórico de precios", level: 1 }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Guardar en favoritos" }).click();
   await page.goto("/favoritos");
@@ -52,9 +52,9 @@ test("consulta precios y conserva favoritos al navegar", async ({ page }) => {
     page.getByRole("button", { name: "Quitar de favoritos" }),
   ).toBeVisible();
   await page.getByRole("link", { name: "Costco Getafe" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Costco Getafe", level: 1 }),
-  ).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Gasolinera" })).toHaveValue(
+    "getafe",
+  );
   await expect(
     page.getByRole("button", { name: "Descargar CSV" }),
   ).toBeVisible();
@@ -72,17 +72,23 @@ test("calcula ahorro con cuota y desplazamiento", async ({ page }) => {
   await expect(page.getByText("289,44")).toBeVisible();
 });
 
-test("el mapa muestra marcadores e indicaciones", async ({ page }) => {
-  await page.route("https://tile.openstreetmap.org/**", (route) =>
-    route.abort(),
-  );
-  await page.goto("/mapa");
-  await page.locator(".leaflet-interactive").first().click();
+test("la portada prescinde del bloque promocional y de los apartados retirados", async ({
+  page,
+}) => {
+  await page.goto("/");
   await expect(
-    page.getByRole("link", { name: "Abrir indicaciones" }),
+    page.getByRole("heading", { name: "Histórico de precios", level: 1 }),
   ).toBeVisible();
+  await expect(page.locator(".hero")).toHaveCount(0);
+  const nav = page.getByRole("navigation", { name: "Principal" });
+  for (const label of ["Gasolineras", "Mapa", "Comparador", "Alertas"])
+    await expect(
+      nav.getByRole("link", { name: label, exact: true }),
+    ).toHaveCount(0);
+  await expect(
+    page.getByRole("combobox", { name: "Comparar con" }),
+  ).toHaveCount(0);
 });
-
 test("el service worker muestra la página sin conexión", async ({
   page,
   context,
@@ -103,7 +109,9 @@ test("el service worker muestra la página sin conexión", async ({
   ).toBeVisible();
 });
 
-test("compara medias históricas de dos estaciones", async ({ page }) => {
+test("consulta la media de la estación seleccionada y descarga CSV", async ({
+  page,
+}) => {
   await page.route("**/api/v1/stations", (route) =>
     route.fulfill({
       json: {
@@ -132,10 +140,10 @@ test("compara medias históricas de dos estaciones", async ({ page }) => {
     });
   });
   await page.goto("/historico?station=getafe");
-  await page
-    .getByRole("combobox", { name: "Comparar con" })
-    .selectOption("las-rozas");
   await expect(page.getByText("Media ponderada · Costco Getafe")).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Gasolinera" })
+    .selectOption("las-rozas");
   await expect(
     page.getByText("Media ponderada · Costco Las Rozas"),
   ).toBeVisible();
@@ -143,7 +151,7 @@ test("compara medias históricas de dos estaciones", async ({ page }) => {
     page.waitForEvent("download"),
     page.getByRole("button", { name: "Descargar CSV" }).click(),
   ]);
-  expect(download.suggestedFilename()).toBe("historico-getafe.csv");
+  expect(download.suggestedFilename()).toBe("historico-las-rozas.csv");
 });
 
 test("el aviso de independencia es visible en portada y aviso legal", async ({

@@ -431,17 +431,7 @@ app.get("/robots.txt", (c) =>
 );
 app.get("/sitemap.xml", async (c) => {
   if (!c.env.PUBLIC_URL) return c.text("URL pública pendiente", 404);
-  const rows = await c.env.DB.prepare(
-    "SELECT slug FROM stations WHERE active=1 AND official_id IS NULL",
-  ).all<{ slug: string }>();
-  const paths = [
-    "/",
-    "/historico",
-    "/comparador",
-    "/calculadora",
-    "/mapa",
-    ...rows.results.map((r) => "/gasolineras/" + r.slug),
-  ];
+  const paths = ["/", "/historico", "/calculadora", "/favoritos"];
   const origin = new URL(c.env.PUBLIC_URL).origin;
   return c.body(
     '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
@@ -457,9 +447,20 @@ app.get("/sitemap.xml", async (c) => {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
-    const publicHtml =
-      url.pathname === "/" ||
-      /^\/gasolineras\/[a-z0-9-]{1,80}\/?$/.test(url.pathname);
+    const retiredStation = /^\/gasolineras\/([a-z0-9-]{1,80})\/?$/.exec(
+      url.pathname,
+    )?.[1];
+    if (
+      retiredStation ||
+      /^\/(gasolineras|mapa|comparador|alertas)\/?$/.test(url.pathname)
+    ) {
+      const target = new URL("/historico", url.origin);
+      const station = retiredStation ?? url.searchParams.get("station");
+      if (station && key.test(station))
+        target.searchParams.set("station", station);
+      return Response.redirect(target, 301);
+    }
+    const publicHtml = url.pathname === "/";
     const cacheable =
       request.method === "GET" &&
       !request.headers.has("authorization") &&

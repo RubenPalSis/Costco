@@ -70,6 +70,8 @@ jobs:
           for attempt in 1 2 3 4 5 6; do
             if curl -fsS "$SITE_URL/" -o /tmp/costco-site.html &&
               grep -q 'Proyecto independiente' /tmp/costco-site.html &&
+              grep -q '<h1>Histórico de precios</h1>' /tmp/costco-site.html &&
+              ! grep -Eq 'href="/(gasolineras|mapa|comparador|alertas)"' /tmp/costco-site.html &&
               ! grep -q 'https://t.me/' /tmp/costco-site.html &&
               grep -q 'Desarrollado por <a href="https://zetaweb.es/">zetaweb.es' /tmp/costco-site.html; then
               break

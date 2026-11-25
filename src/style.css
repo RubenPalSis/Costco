@@ -721,3 +721,26 @@ footer nav {
   border-inline-start: 3px solid var(--link);
   font-size: 0.86rem;
 }
+
+.history-heading,
+.favorites-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.history-heading {
+  margin-bottom: 16px;
+}
+.history-heading h2 {
+  margin: 0;
+}
+.favorites-list {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+}
+.favorites-list li {
+  padding: 14px 18px;
+}
