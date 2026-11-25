@@ -12,20 +12,20 @@ adminConfig.get("/", async (c) => {
   const [stations, fuels, aliases, settings, audit, corrections] =
     await c.env.DB.batch([
       c.env.DB.prepare(
-        "SELECT slug,name,active FROM stations ORDER BY name LIMIT 100",
+        "SELECT slug,name,active FROM stations WHERE official_id IS NULL ORDER BY name LIMIT 100",
       ),
       c.env.DB.prepare("SELECT id,name FROM fuel_types ORDER BY id"),
       c.env.DB.prepare(
         "SELECT alias,station FROM station_aliases ORDER BY alias LIMIT 200",
       ),
       c.env.DB.prepare(
-        "SELECT key,value FROM application_settings WHERE key IN ('pause:telegram','pause:official')",
+        "SELECT key,value FROM application_settings WHERE key='pause:telegram'",
       ),
       c.env.DB.prepare(
         "SELECT action,created_at FROM audit_logs ORDER BY id DESC LIMIT 30",
       ),
       c.env.DB.prepare(
-        "SELECT station,fuel,source,event,price,reason,corrected_at FROM price_corrections ORDER BY corrected_at DESC LIMIT 30",
+        "SELECT station,fuel,source,event,price,reason,corrected_at FROM price_corrections WHERE source='telegram' ORDER BY corrected_at DESC LIMIT 30",
       ),
     ]);
   return c.json({
@@ -41,11 +41,7 @@ adminConfig.get("/observations", async (c) => {
   const station = c.req.query("station"),
     fuel = c.req.query("fuel"),
     source = c.req.query("source");
-  if (
-    !validKey(station) ||
-    !validKey(fuel) ||
-    (source !== "telegram" && source !== "official")
-  )
+  if (!validKey(station) || !validKey(fuel) || source !== "telegram")
     return c.json({ error: "Filtros de observación inválidos" }, 400);
   const rows = await c.env.DB.prepare(
     `SELECT o.event,o.published_at,o.price original,e.price
@@ -98,10 +94,7 @@ adminConfig.post("/", async (c) => {
         .bind(name.trim(), fuel);
       break;
     case "source":
-      if (
-        (source !== "telegram" && source !== "official") ||
-        typeof paused !== "boolean"
-      )
+      if (source !== "telegram" || typeof paused !== "boolean")
         return c.json({ error: "Fuente o estado inválidos" }, 400);
       statement = db
         .prepare(
@@ -113,7 +106,7 @@ adminConfig.post("/", async (c) => {
       if (
         !validKey(station) ||
         !validKey(fuel) ||
-        (source !== "telegram" && source !== "official") ||
+        source !== "telegram" ||
         !shortText(event, 100) ||
         typeof price !== "number" ||
         !Number.isInteger(price) ||

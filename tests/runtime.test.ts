@@ -34,7 +34,7 @@ beforeAll(async () => {
       contents: `
     import app from './worker/index';
     import {sendAlerts} from './worker/push';
-    import {syncTelegram, syncOfficial} from './worker/sync';
+    import {syncTelegram} from './worker/sync';
     export default {fetch(request,env,ctx) {
       const path=new URL(request.url).pathname;
       if(path==='/test/deliver') {
@@ -46,7 +46,6 @@ beforeAll(async () => {
         }).then(()=>Response.json(requests));
       }
       if(path==='/test/telegram') return syncTelegram(env,true,new Response(request.body)).then(x=>Response.json(x));
-      if(path==='/test/official') return syncOfficial(env,new Response(request.body)).then(x=>Response.json(x));
       const headers=new Headers(request.headers);
       if(path.startsWith("/api") && !headers.has("authorization"))headers.set("authorization","Bypass-test-cache");
       return app.fetch(new Request(request,{headers}),env,ctx);
@@ -224,51 +223,25 @@ describe("Worker y D1", () => {
     });
     expect(absent.status).toBe(404);
   });
-  it("incorpora ofertas de una provincia limítrofe aunque no tenga Costco", async () => {
+  it("excluye estaciones y precios de la fuente retirada", async () => {
     const db = await runtime.getD1Database("DB");
-    await db
-      .prepare(
-        "UPDATE stations SET latitude=40.3,longitude=-3.5 WHERE slug='media'",
-      )
-      .run();
-    const timestamp = new Intl.DateTimeFormat("es-ES", {
-      timeZone: "Europe/Madrid",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    })
-      .format(new Date())
-      .replace(",", "");
-    const data = {
-      Fecha: timestamp,
-      ListaEESSPrecio: [
-        {
-          IDProvincia: "19",
-          IDEESS: "244",
-          Municipio: "Cercana",
-          Rótulo: "Estación vecina",
-          Dirección: "Calle 1",
-          Latitud: "40,31",
-          "Longitud (WGS84)": "-3,49",
-          "Precio Gasolina 95 E5": "1,229",
-        },
-      ],
-    };
-    const result = await runtime.dispatchFetch(origin + "/test/official", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-    expect(result.status).toBe(200);
-    const comparison = await runtime.dispatchFetch(
-      origin + "/api/v1/compare?station=media&fuel=gas95&radius=5",
-    );
-    expect(await comparison.json()).toMatchObject({
-      data: [{ official_id: "244", province_id: "19", price: 1229 }],
-    });
+    await db.batch([
+      db.prepare(
+        "INSERT INTO stations(slug,name,city,province,official_id) VALUES ('externa','Externa','Madrid','Madrid','123')",
+      ),
+      db.prepare(
+        "INSERT INTO observations VALUES ('externa','gas95','official','1','2026-11-01T00:00:00.000Z',1000)",
+      ),
+    ]);
+    const prices = await runtime.dispatchFetch(origin + "/api/v1/prices");
+    expect(
+      (
+        (await prices.json()) as { data: { station: string; source: string }[] }
+      ).data.every((p) => p.source === "telegram" && p.station !== "externa"),
+    ).toBe(true);
+    expect(
+      (await runtime.dispatchFetch(origin + "/api/v1/stations/externa")).status,
+    ).toBe(404);
   });
   it("registra un aviso, cifra Web Push y evita el segundo envío del mismo evento", async () => {
     const token = randomBytes(32).toString("hex");
@@ -335,12 +308,12 @@ describe("Worker y D1", () => {
           "INSERT INTO stations(slug,name,city,province) VALUES ('bench','Bench','Bench','Madrid')",
         ),
         db.prepare(`WITH RECURSIVE days(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM days WHERE n<4999)
-        INSERT INTO observations SELECT 'bench','gas95','official',printf('%05d',n),
+        INSERT INTO observations SELECT 'bench','gas95','telegram',printf('%05d',n),
           strftime('%Y-%m-%dT%H:%M:%fZ','2007-01-01','+'||n||' days'),1000+n%50 FROM days`),
       ]);
       const url =
         origin +
-        "/api/v1/prices/history?station=bench&fuel=gas95&source=official&from=2020-01-01&to=2020-01-30";
+        "/api/v1/prices/history?station=bench&fuel=gas95&source=telegram&from=2020-01-01&to=2020-01-30";
       const latency: number[] = [];
       for (let batch = 0; batch < 10; batch++)
         await Promise.all(
@@ -363,9 +336,7 @@ describe("Worker y D1", () => {
     },
     20000,
   );
-  it.skipIf(
-    !process.env.COSTCO_TELEGRAM_HTML || !process.env.COSTCO_OFFICIAL_JSON,
-  )(
+  it.skipIf(!process.env.COSTCO_TELEGRAM_HTML)(
     "validación con respuestas reales descargadas localmente",
     async () => {
       const db = await runtime.getD1Database("DB");
@@ -376,16 +347,6 @@ describe("Worker y D1", () => {
         process.env.COSTCO_TELEGRAM_HTML!,
         "utf8",
       );
-      const national = JSON.parse(
-        await readFile(process.env.COSTCO_OFFICIAL_JSON!, "utf8"),
-      );
-      const regional = {
-        ...national,
-        ListaEESSPrecio: national.ListaEESSPrecio.filter(
-          (row: { IDProvincia: string }) =>
-            ["28", "29", "41", "48", "50"].includes(row.IDProvincia),
-        ),
-      };
       const t = await runtime.dispatchFetch(origin + "/test/telegram", {
         method: "POST",
         body: telegram,
@@ -394,16 +355,9 @@ describe("Worker y D1", () => {
       expect(((await t.json()) as { changed: number }).changed).toBeGreaterThan(
         10,
       );
-      const o = await runtime.dispatchFetch(origin + "/test/official", {
-        method: "POST",
-        body: JSON.stringify(regional),
-      });
-      expect(o.status).toBe(200);
-      expect(await o.json()).toMatchObject({ changed: 6 });
       const p = await runtime.dispatchFetch(origin + "/api/v1/prices");
       expect(await p.json()).toMatchObject({
         data: expect.arrayContaining([
-          expect.objectContaining({ station: "getafe", source: "official" }),
           expect.objectContaining({
             station: "getafe",
             source: "telegram",
@@ -411,12 +365,6 @@ describe("Worker y D1", () => {
           }),
         ]),
       });
-      const near = await runtime.dispatchFetch(
-        origin + "/api/v1/compare?station=getafe&fuel=gas95&radius=10",
-      );
-      expect(
-        ((await near.json()) as { data: unknown[] }).data.length,
-      ).toBeGreaterThan(0);
     },
     25000,
   );

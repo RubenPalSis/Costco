@@ -34,10 +34,10 @@ export async function publicPage(request: Request, env: Env) {
     await (
       slug
         ? env.DB.prepare(
-            "SELECT slug,name,city,address,hours,latitude,longitude FROM stations WHERE active=1 AND slug=?",
+            "SELECT slug,name,city,address,hours,latitude,longitude FROM stations WHERE active=1 AND official_id IS NULL AND slug=?",
           ).bind(slug)
         : env.DB.prepare(
-            "SELECT slug,name,city,address,hours,latitude,longitude FROM stations WHERE active=1 ORDER BY city LIMIT 100",
+            "SELECT slug,name,city,address,hours,latitude,longitude FROM stations WHERE active=1 AND official_id IS NULL ORDER BY city LIMIT 100",
           )
     ).all<Station>()
   ).results;
@@ -59,7 +59,7 @@ export async function publicPage(request: Request, env: Env) {
         await env.DB.prepare(
           `SELECT f.name,p.source,p.price,
       (SELECT MAX(o.published_at) FROM observations o WHERE o.station=p.station AND o.fuel=p.fuel AND o.source=p.source) AS verified_at
-      FROM current_prices p JOIN fuel_types f ON f.id=p.fuel WHERE p.station=? ORDER BY p.source,p.fuel`,
+      FROM current_prices p JOIN fuel_types f ON f.id=p.fuel WHERE p.station=? AND p.source='telegram' ORDER BY p.source,p.fuel`,
         )
           .bind(station.slug)
           .all<Price>()
@@ -73,7 +73,7 @@ export async function publicPage(request: Request, env: Env) {
         " · " +
         (p.price / 1000).toFixed(3).replace(".", ",") +
         " €/L · " +
-        (p.source === "telegram" ? "Socios, Telegram" : "Declarado, MITECO") +
+        "Socios, Telegram" +
         ' · <time datetime="' +
         escape(p.verified_at) +
         '">' +
@@ -188,7 +188,7 @@ export async function publicPage(request: Request, env: Env) {
     .on("#root", {
       element(el) {
         el.setInnerContent(
-          '<main class="shell"><nav aria-label="Navegación"><a href="/">Inicio</a><a href="/historico">Histórico</a><a href="/comparador">Comparador</a></nav>' +
+          '<main class="shell"><nav aria-label="Navegación"><a href="/">Inicio</a><a href="/historico">Histórico</a><a href="https://t.me/costco_gasolineras">Ver precios en Telegram</a></nav>' +
             '<aside class="notice independence" aria-label="Proyecto independiente">' +
             escape(independenceNotice) +
             "</aside>" +

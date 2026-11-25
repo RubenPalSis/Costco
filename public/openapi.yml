@@ -37,7 +37,7 @@ components:
     Source:
       name: source
       in: query
-      schema: { type: string, enum: [telegram, official] }
+      schema: { type: string, enum: [telegram] }
 paths:
   /stations:
     get:
@@ -89,15 +89,9 @@ paths:
       responses: { "200": { $ref: "#/components/responses/Data" } }
   /compare:
     get:
-      summary: Compara precios de Costco o cercanos a una estación
+      summary: Compara precios entre estaciones Costco
       parameters:
-        - { $ref: "#/components/parameters/Station" }
         - { $ref: "#/components/parameters/Fuel" }
-        - {
-            name: radius,
-            in: query,
-            schema: { type: integer, enum: [5, 10, 20, 50] },
-          }
       responses:
         {
           "200": { $ref: "#/components/responses/Data" },
@@ -271,7 +265,7 @@ paths:
                 reason: { type: string, maxLength: 300 }
                 station: { type: string }
                 fuel: { type: string }
-                source: { type: string, enum: [telegram, official] }
+                source: { type: string, enum: [telegram] }
                 event: { type: string }
                 name: { type: string }
                 alias: { type: string }
@@ -294,7 +288,7 @@ paths:
             name: source,
             in: query,
             required: true,
-            schema: { type: string, enum: [telegram, official] },
+            schema: { type: string, enum: [telegram] },
           }
       responses:
         "200": { $ref: "#/components/responses/Data" }

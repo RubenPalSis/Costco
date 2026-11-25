@@ -47,7 +47,6 @@ export type Status = {
     next_attempt?: string | null;
   }[];
   telegramEnabled: boolean;
-  officialEnabled: boolean;
   pushKey: string | null;
 };
 export const euros = (value: number, digits = 3) =>

@@ -1,12 +1,6 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import {
-  digest,
-  syncOfficial,
-  syncTelegram,
-  sourceEnabled,
-  type Env,
-} from "./sync";
+import { digest, syncTelegram, sourceEnabled, type Env } from "./sync";
 import { pushEndpoint, sendAlerts } from "./push";
 import { publicPage } from "./html";
 import { adminConfig } from "./admin";
@@ -14,7 +8,7 @@ import { adminConfig } from "./admin";
 const app = new Hono<{ Bindings: Env; Variables: { user: string } }>();
 const api = app.basePath("/api/v1");
 const stationSelect =
-  "SELECT slug,official_id,name,city,province,region,postal_code,address,latitude,longitude,hours,active,created_at,updated_at FROM stations WHERE active=1";
+  "SELECT slug,name,city,province,region,postal_code,address,latitude,longitude,hours,active,created_at,updated_at FROM stations WHERE active=1 AND official_id IS NULL";
 const key = /^[a-z0-9-]{1,80}$/;
 const date = /^\d{4}-\d{2}-\d{2}$/;
 const isoToday = () => new Date().toISOString().slice(0, 10);
@@ -81,7 +75,7 @@ api.get("/prices", async (c) =>
       await c.env.DB.prepare(
         `SELECT p.*,f.name AS fuel_name,d.modality,d.url AS source_url, (SELECT MAX(o.published_at) FROM observations o
   WHERE o.station=p.station AND o.fuel=p.fuel AND o.source=p.source) AS verified_at
-  FROM current_prices p JOIN data_sources d ON d.id=p.source JOIN fuel_types f ON f.id=p.fuel JOIN stations s ON s.slug=p.station AND s.active=1 ORDER BY p.station,p.fuel,p.source LIMIT 500`,
+  FROM current_prices p JOIN data_sources d ON d.id=p.source JOIN fuel_types f ON f.id=p.fuel JOIN stations s ON s.slug=p.station AND s.active=1 WHERE p.source='telegram' AND s.official_id IS NULL ORDER BY p.station,p.fuel,p.source LIMIT 500`,
       ).all()
     ).results,
   }),
@@ -97,7 +91,7 @@ api.get("/prices/history", async (c) => {
   if (
     !key.test(station) ||
     !key.test(fuel) ||
-    !["telegram", "official"].includes(source) ||
+    source !== "telegram" ||
     !date.test(from) ||
     !date.test(to) ||
     from > to
@@ -117,7 +111,7 @@ api.get("/prices/history", async (c) => {
   const limit = Math.max(1, bounded(c.req.query("limit"), 366, 366)),
     offset = bounded(c.req.query("offset"), 0, 5000);
   const points = `WITH active_station AS (
-       SELECT slug FROM stations WHERE slug=?1 AND active=1
+       SELECT slug FROM stations WHERE slug=?1 AND active=1 AND official_id IS NULL
      ), baseline AS (
        SELECT price, event FROM effective_observations
        WHERE station=(SELECT slug FROM active_station) AND fuel=?2 AND source=?3 AND published_at<?4
@@ -161,9 +155,10 @@ api.get("/prices/history", async (c) => {
 api.get("/prices/cheapest", async (c) => {
   const fuel = c.req.query("fuel") ?? "gas95",
     source = c.req.query("source") ?? "telegram";
+  if (source !== "telegram") return c.json(bad("Fuente desconocida"), 400);
   return c.json({
     data: await c.env.DB.prepare(
-      "SELECT * FROM current_prices WHERE station IN (SELECT slug FROM stations WHERE active=1) AND fuel=? AND source=? ORDER BY price,station LIMIT 1",
+      "SELECT * FROM current_prices WHERE station IN (SELECT slug FROM stations WHERE active=1 AND official_id IS NULL) AND fuel=? AND source=? ORDER BY price,station LIMIT 1",
     )
       .bind(fuel, source)
       .first(),
@@ -173,39 +168,15 @@ api.get("/statistics", async (c) =>
   c.json({
     data: (
       await c.env.DB.prepare(
-        "SELECT source,fuel,COUNT(*) AS count,MIN(price) AS minimum,MAX(price) AS maximum,ROUND(AVG(price)) AS average FROM current_prices WHERE station IN (SELECT slug FROM stations WHERE active=1) GROUP BY source,fuel",
+        "SELECT source,fuel,COUNT(*) AS count,MIN(price) AS minimum,MAX(price) AS maximum,ROUND(AVG(price)) AS average FROM current_prices WHERE source='telegram' AND station IN (SELECT slug FROM stations WHERE active=1 AND official_id IS NULL) GROUP BY source,fuel",
       ).all()
     ).results,
   }),
 );
 api.get("/compare", async (c) => {
   const fuel = c.req.query("fuel") ?? "gas95";
-  const station = c.req.query("station");
-  if (station) {
-    const radius = Number(c.req.query("radius") ?? "10");
-    if (
-      !key.test(station) ||
-      !key.test(fuel) ||
-      ![5, 10, 20, 50].includes(radius)
-    )
-      return c.json(bad("Filtro inválido"), 400);
-    return c.json({
-      data: (
-        await c.env.DB.prepare(
-          "SELECT * FROM nearby_prices WHERE station IN (SELECT slug FROM stations WHERE active=1) AND station=? AND fuel=? AND distance<=? AND verified_at>=? ORDER BY price,distance LIMIT 5",
-        )
-          .bind(
-            station,
-            fuel,
-            radius,
-            new Date(Date.now() - 72 * 3600000).toISOString(),
-          )
-          .all()
-      ).results,
-    });
-  }
   const rows = await c.env.DB.prepare(
-    "SELECT p.*,s.name FROM current_prices p JOIN stations s ON s.slug=p.station WHERE p.fuel=? AND s.active=1 ORDER BY p.source,p.price LIMIT 100",
+    "SELECT p.*,s.name FROM current_prices p JOIN stations s ON s.slug=p.station WHERE p.fuel=? AND s.active=1 AND s.official_id IS NULL AND p.source='telegram' ORDER BY p.source,p.price LIMIT 100",
   )
     .bind(fuel)
     .all();
@@ -214,17 +185,20 @@ api.get("/compare", async (c) => {
 api.get("/status", async (c) =>
   c.json({
     data: (
-      await c.env.DB.prepare("SELECT * FROM sync_state ORDER BY source").all()
+      await c.env.DB.prepare(
+        "SELECT * FROM sync_state WHERE source IN ('telegram','telegram-history') ORDER BY source",
+      ).all()
     ).results,
     telegramEnabled: await sourceEnabled(c.env, "telegram"),
-    officialEnabled: await sourceEnabled(c.env, "official"),
     pushKey: c.env.VAPID_PUBLIC_KEY ?? null,
   }),
 );
 api.get("/sources", async (c) =>
   c.json({
     data: (
-      await c.env.DB.prepare("SELECT * FROM data_sources ORDER BY id").all()
+      await c.env.DB.prepare(
+        "SELECT * FROM data_sources WHERE id='telegram'",
+      ).all()
     ).results,
   }),
 );
@@ -246,18 +220,11 @@ api.use("/admin/*", async (c, next) => {
 });
 api.post("/admin/sync", async (c) => {
   const source = c.req.query("source") ?? "telegram";
-  if (!["telegram", "official"].includes(source))
-    return c.json(bad("Fuente desconocida"), 400);
-  if (
-    (source !== "telegram" && source !== "official") ||
-    !(await sourceEnabled(c.env, source))
-  )
+  if (source !== "telegram") return c.json(bad("Fuente desconocida"), 400);
+  if (!(await sourceEnabled(c.env, "telegram")))
     return c.json(bad("Fuente desactivada"), 409);
-  const data =
-    source === "telegram"
-      ? await syncTelegram(c.env)
-      : await syncOfficial(c.env);
-  if (source === "telegram") await sendAlerts(c.env);
+  const data = await syncTelegram(c.env);
+  await sendAlerts(c.env);
   await c.env.DB.prepare("INSERT INTO audit_logs(action) VALUES (?)")
     .bind("sync:" + source)
     .run();
@@ -276,22 +243,21 @@ api.post("/admin/import", async (c) => {
 });
 api.route("/admin/config", adminConfig);
 api.get("/admin/overview", async (c) => {
-  const [totals, state, messages, coverage] = await c.env.DB.batch<
+  const [totals, state, messages] = await c.env.DB.batch<
     Record<string, unknown>
   >([
     c.env.DB.prepare(`SELECT (SELECT COUNT(*) FROM stations) AS stations,
       (SELECT COUNT(*) FROM price_history) AS changes,(SELECT COUNT(*) FROM telegram_messages) AS messages,
       (SELECT COUNT(*) FROM push_subscriptions) AS subscriptions,(SELECT COUNT(*) FROM notification_logs) AS recent_push`),
-    c.env.DB.prepare("SELECT * FROM sync_state ORDER BY source"),
+    c.env.DB.prepare(
+      "SELECT * FROM sync_state WHERE source IN ('telegram','telegram-history') ORDER BY source",
+    ),
     c.env.DB.prepare(
       "SELECT id,published_at,updated_at FROM telegram_messages ORDER BY id DESC LIMIT 15",
     ),
-    c.env.DB.prepare(
-      "SELECT COUNT(*) AS recent_provinces FROM official_province_sync WHERE last_success>=?",
-    ).bind(new Date(Date.now() - 72 * 3600000).toISOString()),
   ]);
   return c.json({
-    totals: { ...totals.results[0], ...coverage.results[0] },
+    totals: totals.results[0],
     state: state.results,
     messages: messages.results,
   });
@@ -466,7 +432,7 @@ app.get("/robots.txt", (c) =>
 app.get("/sitemap.xml", async (c) => {
   if (!c.env.PUBLIC_URL) return c.text("URL pública pendiente", 404);
   const rows = await c.env.DB.prepare(
-    "SELECT slug FROM stations WHERE active=1",
+    "SELECT slug FROM stations WHERE active=1 AND official_id IS NULL",
   ).all<{ slug: string }>();
   const paths = [
     "/",
@@ -505,7 +471,7 @@ export default {
     const cacheKey = new Request(
       url.origin + url.pathname + (publicHtml ? "" : url.search),
     );
-    const cache = cacheable ? await caches.open("ahorro-public-v1") : null;
+    const cache = cacheable ? await caches.open("ahorro-costco-v2") : null;
     const conditional = request.headers.get("if-none-match");
     if (cache) {
       const hit = await cache.match(cacheKey);
@@ -527,14 +493,7 @@ export default {
     return response;
   },
   async scheduled(event: ScheduledController, env: Env) {
-    if (event.cron === "7,27,47 * * * *") {
-      if (
-        (await sourceEnabled(env, "official")) &&
-        (env.DEGRADED_MODE !== "true" ||
-          new Date(event.scheduledTime).getUTCMinutes() === 7)
-      )
-        await syncOfficial(env).catch(() => null);
-    } else if (event.cron === "28 5 * * *") {
+    if (event.cron === "28 5 * * *") {
       await env.DB.batch([
         env.DB.prepare(
           "DELETE FROM synchronization_logs WHERE created_at<datetime('now','-30 days')",

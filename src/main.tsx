@@ -21,7 +21,6 @@ import {
   maps,
   savings,
   stamp,
-  type Nearby,
   type Price,
   type Station,
   type Status,
@@ -37,7 +36,6 @@ const HistoryChart = lazy(() =>
 const SavingsChart = lazy(() =>
   import("./charts").then((module) => ({ default: module.SavingsChart })),
 );
-const EMPTY_NEARBY: Nearby[] = [];
 const nav = [
   ["/", "Inicio"],
   ["/gasolineras", "Gasolineras"],
@@ -57,8 +55,7 @@ const legal = [
   ["fuentes", "Fuentes"],
   ["sobre-nosotros", "Sobre nosotros"],
 ];
-const sourceName = (source: string) =>
-  source === "telegram" ? "Socios · Telegram" : "Precio declarado · MITECO";
+const sourceName = () => "Socios · Telegram";
 function readFavorites(): string[] {
   try {
     const value: unknown = JSON.parse(
@@ -141,34 +138,6 @@ function Empty({ children }: { children: ReactNode }) {
 function Loading() {
   return <div className="skeleton" role="status" aria-label="Cargando datos" />;
 }
-function useNearby(station: string, fuel: string, radius: string) {
-  const [state, setState] = useState<{
-    data: Nearby[];
-    error: string;
-    loading: boolean;
-  }>({ data: [], error: "", loading: false });
-  useEffect(() => {
-    if (!station) return;
-    const controller = new AbortController();
-    const load = async () => {
-      setState({ data: [], error: "", loading: true });
-      try {
-        const { data } = await api<{ data: Nearby[] }>(
-          "/compare?" + new URLSearchParams({ station, fuel, radius }),
-          { signal: controller.signal },
-        );
-        if (!controller.signal.aborted)
-          setState({ data, error: "", loading: false });
-      } catch (e) {
-        if (!controller.signal.aborted)
-          setState({ data: [], error: (e as Error).message, loading: false });
-      }
-    };
-    void load();
-    return () => controller.abort();
-  }, [station, fuel, radius]);
-  return station ? state : { data: EMPTY_NEARBY, error: "", loading: false };
-}
 function App() {
   const path = location.pathname.replace(/\/$/, "") || "/";
   const [stations, setStations] = useState<Station[]>([]),
@@ -244,12 +213,11 @@ function App() {
     };
   }, [path, station]);
   const member = prices.filter((p) => p.source === "telegram");
-  const defaultSource = status?.officialEnabled && !status.telegramEnabled ? "official" : "telegram";
   const legalPage = legal.find(([url]) => "/" + url === path);
   let content: ReactNode;
   if (legalPage) content = <Legal slug={legalPage[0]} title={legalPage[1]} />;
   else if (path === "/admin") content = <Admin />;
-  else if (path === "/historico")
+  else if (path === "/historico" || path === "/comparador")
     content = (
       <>
         <Heading
@@ -257,17 +225,15 @@ function App() {
           title="Histórico de precios"
           description="Consulta cuándo cambió el precio de cada combustible."
         />
-        <History key={defaultSource} stations={stations} defaultSource={defaultSource} />
+        <History stations={stations} />
       </>
     );
-  else if (path === "/comparador")
-    content = <Compare stations={stations} prices={prices} />;
   else if (path === "/calculadora")
     content = <Calculator stations={stations} prices={member} />;
   else if (path === "/alertas")
     content = <Alerts stations={stations} pushKey={status?.pushKey ?? null} />;
   else if (path === "/mapa")
-    content = <MapPage key={defaultSource} stations={stations} prices={prices} defaultSource={defaultSource} />;
+    content = <MapPage stations={stations} prices={prices} />;
   else if (station)
     content = (
       <>
@@ -291,10 +257,10 @@ function App() {
             </a>
           </div>
         </div>
-        <History key={defaultSource} stations={stations} initial={station.slug} defaultSource={defaultSource} />
+        <History stations={stations} initial={station.slug} />
         <div className="station-actions">
           <a href={"/comparador?station=" + station.slug}>
-            Comparar estaciones cercanas
+            Comparar estaciones Costco
           </a>
           <a href={"/calculadora?station=" + station.slug}>Calcular ahorro</a>
           <a href={"/alertas?station=" + station.slug}>Crear alerta</a>
@@ -430,13 +396,12 @@ function Home({
     [province, setProvince] = useState(""),
     [region, setRegion] = useState(""),
     [sort, setSort] = useState("city"),
-    [selectedSource, setSource] = useState(""),
     [max, setMax] = useState(""),
     [onlyDown, setOnlyDown] = useState(false),
     [onlyFavorites, setOnlyFavorites] = useState(path === "/favoritos");
   const [position, setPosition] = useState<GeolocationCoordinates | null>(null),
     [geoError, setGeoError] = useState("");
-  const source = selectedSource || (status?.officialEnabled && !status.telegramEnabled ? "official" : "telegram");
+  const source = "telegram";
   const list = prices.filter((p) => p.source === source);
   const gas = list.filter((p) => p.fuel === "gas95"),
     diesel = list.filter((p) => p.fuel === "diesel");
@@ -504,12 +469,12 @@ function Home({
               <em>estación por estación.</em>
             </h1>
             <p>
-              Consulta los precios de Costco, compara gasolineras cercanas y
+              Consulta los precios de Costco, compara estaciones Costco y
               calcula cuánto puedes ahorrar al repostar.
             </p>
             <div className="actions">
-              <a className="button mint" href="#gasolineras">
-                Ver gasolineras <ArrowRight size={17} />
+              <a className="button mint" href="https://t.me/costco_gasolineras">
+                Ver precios en Telegram <ArrowRight size={17} />
               </a>
               <a className="button ghost" href="/mapa">
                 <MapPin size={17} /> Explorar el mapa
@@ -526,7 +491,7 @@ function Home({
                 {least(gas)}
                 {gas.length > 0 && <small> / L</small>}
               </strong>
-              <span>{sourceName(source)}</span>
+              <span>{sourceName()}</span>
             </div>
           </div>
         </section>
@@ -579,25 +544,9 @@ function Home({
       </div>
       {status && (
         <div className="source-line">
-          {["telegram", "official"].map((value) => {
-            const record = status.data.find((x) => x.source === value);
-            const enabled =
-              value === "telegram"
-                ? status.telegramEnabled
-                : status.officialEnabled;
-            return (
-              <span key={value}>
-                {sourceName(value)} ·{" "}
-                {enabled
-                  ? record?.failures
-                    ? "Sincronización retrasada"
-                    : record?.last_success
-                      ? "Última consulta " + stamp(record.last_success)
-                      : "Pendiente de sincronizar"
-                  : "Sincronización desactivada"}
-              </span>
-            );
-          })}
+          <a href="https://t.me/costco_gasolineras">
+            Consultar precios en el canal de Telegram
+          </a>
         </div>
       )}
       <section id="gasolineras">
@@ -629,14 +578,6 @@ function Home({
           </Select>
           <Select label="Combustible" value={fuel} onChange={setFuel}>
             <FuelOptions />
-          </Select>
-          <Select
-            label="Fuente para ordenar"
-            value={source}
-            onChange={setSource}
-          >
-            <option value="telegram">Socios · Telegram</option>
-            <option value="official">Declarado · MITECO</option>
           </Select>
           <Select label="Orden" value={sort} onChange={setSort}>
             <option value="city">Ciudad</option>
@@ -712,7 +653,7 @@ function Home({
           <Empty>
             {stations.length
               ? "Ninguna estación coincide con los filtros."
-              : "Las gasolineras aparecerán cuando haya datos de una fuente habilitada."}
+              : "Consulta los precios para socios directamente en el canal de Telegram."}
           </Empty>
         )}
       </section>
@@ -778,13 +719,13 @@ function Card({
           <Heart size={19} fill={saved ? "currentColor" : "none"} />
         </button>
       </div>
-      {["telegram", "official"].map((source) => {
+      {["telegram"].map((source) => {
         const group = rows.filter((p) => p.source === source);
         return (
           group.length > 0 && (
             <div className="price-group" key={source}>
               <div className="price-source">
-                <a href={group[0].source_url}>{sourceName(source)}</a>
+                <a href={group[0].source_url}>{sourceName()}</a>
                 <span title="Última verificación">
                   {stamp(
                     group
@@ -838,21 +779,19 @@ function Card({
 const initialStation = () =>
   new URLSearchParams(location.search).get("station") ?? "";
 function History({
-  defaultSource,
   stations,
   initial,
 }: {
-  defaultSource: string;
   stations: Station[];
   initial?: string;
 }) {
   const [station, setStation] = useState(initial ?? initialStation()),
     [comparison, setComparison] = useState(""),
     [fuel, setFuel] = useState("gas95"),
-    [source, setSource] = useState(defaultSource),
     [days, setDays] = useState("90"),
     [start, setStart] = useState(""),
     [end, setEnd] = useState("");
+  const source = "telegram";
   type Series = {
     data: Price[];
     since?: string;
@@ -1000,10 +939,6 @@ function History({
         <Select label="Combustible" value={fuel} onChange={setFuel}>
           <FuelOptions />
         </Select>
-        <Select label="Fuente" value={source} onChange={setSource}>
-          <option value="telegram">Socios · Telegram</option>
-          <option value="official">Declarado · MITECO</option>
-        </Select>
         <Select label="Periodo" value={days} onChange={setDays}>
           <option value="1">Último día</option>
           {[7, 30, 90, 180, 365].map((d) => (
@@ -1123,164 +1058,6 @@ function History({
         </>
       )}
     </section>
-  );
-}
-function Compare({
-  stations,
-  prices,
-}: {
-  stations: Station[];
-  prices: Price[];
-}) {
-  const [station, setStation] = useState(initialStation()),
-    [fuel, setFuel] = useState("gas95"),
-    [radius, setRadius] = useState("10"),
-    [liters, setLiters] = useState(50),
-    [extra, setExtra] = useState(0),
-    [consumption, setConsumption] = useState(6),
-    [fills, setFills] = useState(2);
-  const selected = station || stations[0]?.slug || "";
-  const { data, error, loading } = useNearby(selected, fuel, radius);
-  const member = prices.find(
-    (p) => p.station === selected && p.fuel === fuel && p.source === "telegram",
-  );
-  const official = prices.find(
-    (p) => p.station === selected && p.fuel === fuel && p.source === "official",
-  );
-  const reference = member ?? official;
-  return (
-    <>
-      <Heading
-        label="Compara antes de salir"
-        title="Comparador de gasolineras"
-        description="Consulta precios declarados de otras gasolineras y estima el ahorro después del desplazamiento."
-      />
-      <section className="panel feature">
-        <div className="form-grid">
-          <Select
-            label="Estación Costco"
-            value={selected}
-            onChange={setStation}
-          >
-            <StationOptions stations={stations} />
-          </Select>
-          <Select label="Combustible" value={fuel} onChange={setFuel}>
-            <FuelOptions />
-          </Select>
-          <Select
-            label="Radio en línea recta"
-            value={radius}
-            onChange={setRadius}
-          >
-            {[5, 10, 20, 50].map((n) => (
-              <option value={n} key={n}>
-                {n} km
-              </option>
-            ))}
-          </Select>
-          <NumberField
-            label="Litros por repostaje"
-            value={liters}
-            change={setLiters}
-          />
-          <NumberField
-            label="Km extra de ida y vuelta"
-            value={extra}
-            change={setExtra}
-          />
-          <NumberField
-            label="Consumo L/100 km"
-            value={consumption}
-            change={setConsumption}
-          />
-          <NumberField
-            label="Repostajes mensuales"
-            value={fills}
-            change={setFills}
-          />
-        </div>
-        <p className="muted">
-          {member ? "Socios · " + euros(member.price / 1000) + "/L. " : ""}
-          {official
-            ? "Declarado para Costco · " + euros(official.price / 1000) + "/L. "
-            : ""}
-          {member && official
-            ? "Diferencia entre modalidades: " +
-              euros((official.price - member.price) / 1000) +
-              "/L. "
-            : ""}
-          Hasta cinco precios de MITECO en el radio seleccionado. Las provincias
-          se actualizan por turnos.
-        </p>
-        {loading ? (
-          <Loading />
-        ) : error ? (
-          <Empty>{error}</Empty>
-        ) : data.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Gasolinera</th>
-                  <th>Distancia recta</th>
-                  <th>€/L</th>
-                  <th>Diferencia €/L</th>
-                  <th>Viaje</th>
-                  <th>Ahorro neto</th>
-                  <th>Mensual</th>
-                  <th>Anual</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((p) => {
-                  const result = reference
-                    ? savings(
-                        reference.price / 1000,
-                        p.price / 1000,
-                        liters,
-                        consumption,
-                        extra,
-                        fills,
-                        0,
-                      )
-                    : null;
-                  return (
-                    <tr key={p.official_id}>
-                      <td>
-                        <strong>{p.name}</strong>
-                        <small>{p.address}</small>
-                        <small>Verificado · {stamp(p.verified_at)}</small>
-                      </td>
-                      <td>{p.distance.toFixed(1)} km</td>
-                      <td>{euros(p.price / 1000)}</td>
-                      <td>
-                        {reference
-                          ? euros((p.price - reference.price) / 1000)
-                          : "—"}
-                      </td>
-                      {[
-                        result?.trip,
-                        result?.net,
-                        result?.monthly,
-                        result?.annual,
-                      ].map((value, i) => (
-                        <td key={i}>
-                          {value === undefined ? "—" : euros(value, 2)}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <Empty>
-            No hay precios cercanos disponibles para esta selección.
-          </Empty>
-        )}
-      </section>
-    </>
   );
 }
 function NumberField({
@@ -1471,21 +1248,16 @@ function Calculator({
   );
 }
 function MapPage({
-  defaultSource,
   stations,
   prices,
 }: {
-  defaultSource: string;
   stations: Station[];
   prices: Price[];
 }) {
-  const [station, setStation] = useState(""),
-    [fuel, setFuel] = useState("gas95"),
-    [source, setSource] = useState(defaultSource),
+  const [fuel, setFuel] = useState("gas95"),
     [position, setPosition] = useState<GeolocationCoordinates | null>(null),
     [geoError, setGeoError] = useState("");
-  const { data } = useNearby(station, fuel, "10");
-  const rows = prices.filter((p) => p.fuel === fuel && p.source === source);
+  const rows = prices.filter((p) => p.fuel === fuel && p.source === "telegram");
   const cheapest = [...rows].sort((a, b) => a.price - b.price)[0];
   const nearest = position
     ? stations
@@ -1518,17 +1290,6 @@ function MapPage({
           <Select label="Combustible" value={fuel} onChange={setFuel}>
             <FuelOptions />
           </Select>
-          <Select label="Precio Costco" value={source} onChange={setSource}>
-            <option value="telegram">Socios</option>
-            <option value="official">Declarado</option>
-          </Select>
-          <Select
-            label="Mostrar estaciones cercanas a"
-            value={station}
-            onChange={setStation}
-          >
-            <StationOptions stations={stations} />
-          </Select>
           <button
             className="button"
             onClick={() => locate(setPosition, setGeoError)}
@@ -1555,7 +1316,7 @@ function MapPage({
         )}
         {geoError && <p role="status">{geoError}</p>}
         <Suspense fallback={<Loading />}>
-          <FuelMap stations={stations} prices={rows} nearby={data} />
+          <FuelMap stations={stations} prices={rows} nearby={[]} />
         </Suspense>
         <ul className="map-list">
           {stations.map((s) => (
@@ -1875,7 +1636,6 @@ function Admin() {
           {[
             ["Consultar registros", "/admin/logs", "GET"],
             ["Sincronizar Telegram", "/admin/sync", "POST"],
-            ["Consultar MITECO", "/admin/sync?source=official", "POST"],
             ["Importar página anterior", "/admin/import", "POST"],
           ].map(([label, path, method]) => (
             <button
@@ -1904,7 +1664,6 @@ function Admin() {
                 messages: "Mensajes",
                 subscriptions: "Suscripciones",
                 recent_push: "Avisos recientes",
-                recent_provinces: "Provincias en las últimas 72 h",
               }).map(([key, label]) => (
                 <Metric
                   key={key}
@@ -2121,7 +1880,6 @@ function AdminEditor({ token }: { token: string }) {
               onChange={(v) => changeFilter(setSource, v)}
             >
               <option value="telegram">Telegram</option>
-              <option value="official">MITECO</option>
             </Select>
           )}
           {["station", "fuel"].includes(action) && (
@@ -2294,9 +2052,7 @@ function Legal({ slug, title }: { slug: string; title: string }) {
         <a href={"mailto:" + brand.contact}>{brand.contact}</a>
       </p>
     ) : (
-      <p>
-        El correo de contacto del proyecto está pendiente de configurar.
-      </p>
+      <p>El correo de contacto del proyecto está pendiente de configurar.</p>
     ),
     fuentes: (
       <>
@@ -2307,23 +2063,15 @@ function Legal({ slug, title }: { slug: string; title: string }) {
             </a>
           </li>
           <li>
-            <a href="https://datos.gob.es/es/catalogo/e05068001-instalaciones-de-suministro-de-combustibles-a-vehiculos-con-venta-publica">
-              MITECO · precios declarados y ubicación de estaciones
-            </a>
-          </li>
-          <li>
             <a href="https://www.openstreetmap.org/copyright">
               OpenStreetMap · cartografía
             </a>
           </li>
         </ul>
+
         <p>
-          Los datos de MITECO se ofrecen bajo <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. El proyecto filtra las estaciones, normaliza los importes y calcula distancias e históricos.
-        </p>
-        <p>
-          Las modalidades de socios y precios declarados se muestran por
-          separado. El histórico refleja las publicaciones que hayan podido
-          consultarse.
+          El canal publica precios de combustible para socios de Costco. Puedes
+          consultarlos directamente en Telegram.
         </p>
       </>
     ),

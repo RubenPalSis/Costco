@@ -23,3 +23,9 @@
 - [x] Verificar el alta, la baja, el cifrado y la deduplicación de Web Push con transporte simulado.
 - [ ] Medir consumo bajo carga de producción y configurar Turnstile o Cloudflare Access según el dominio y la cuenta.
 - [ ] Autorizar y verificar despliegue público, Search Console e importación histórica completa disponible.
+
+## Versión centrada en Costco
+
+- [x] Retirar la fuente anterior y el comparador con otras marcas de la web y la API.
+- [x] Mostrar el enlace directo al canal de precios para socios de Costco.
+- [ ] Confirmar el permiso aplicable antes de habilitar la republicación automática del canal en producción.
