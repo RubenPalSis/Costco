@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { digest, syncTelegram, sourceEnabled, type Env } from "./sync";
 import { pushEndpoint, sendAlerts } from "./push";
-import { publicPage } from "./html";
+import { hasPublicPage, indexablePaths, publicPage } from "./html";
 import { adminConfig } from "./admin";
 
 const app = new Hono<{ Bindings: Env; Variables: { user: string } }>();
@@ -109,7 +109,7 @@ api.get("/prices/history", async (c) => {
   const until = new Date(Math.min(toMs + 86400000, Date.now())).toISOString();
   const since = new Date(fromMs).toISOString();
   const limit = Math.max(1, bounded(c.req.query("limit"), 366, 366)),
-    offset = bounded(c.req.query("offset"), 0, 5000);
+    offset = bounded(c.req.query("offset"), 0, Number.MAX_SAFE_INTEGER);
   const points = `WITH active_station AS (
        SELECT slug FROM stations WHERE slug=?1 AND active=1 AND official_id IS NULL
      ), baseline AS (
@@ -132,10 +132,10 @@ api.get("/prices/history", async (c) => {
     ).bind(station, fuel, source, since, until, limit, offset),
     c.env.DB.prepare(
       `${points}, intervals AS (
-       SELECT price, (unixepoch(LEAD(published_at,1,?5) OVER (ORDER BY published_at,actual,event)) - unixepoch(published_at)) AS seconds
-       FROM points
+       SELECT price, actual, LAG(price) OVER ordered AS previous, (unixepoch(LEAD(published_at,1,?5) OVER ordered) - unixepoch(published_at)) AS seconds
+       FROM points WINDOW ordered AS (ORDER BY published_at,actual,event)
      )
-     SELECT SUM(price * seconds)*1.0/NULLIF(SUM(seconds),0) AS average,
+     SELECT COALESCE(SUM(actual=1 AND (previous IS NULL OR price<>previous)),0) AS changes, SUM(price * seconds)*1.0/NULLIF(SUM(seconds),0) AS average,
        MIN(price) FILTER (WHERE seconds>0) AS minimum,
        MAX(price) FILTER (WHERE seconds>0) AS maximum,
        COALESCE(SUM(seconds),0) AS seconds,
@@ -431,7 +431,15 @@ app.get("/robots.txt", (c) =>
 );
 app.get("/sitemap.xml", async (c) => {
   if (!c.env.PUBLIC_URL) return c.text("URL pública pendiente", 404);
-  const paths = ["/", "/historico", "/calculadora", "/favoritos"];
+  const stations = await c.env.DB.prepare(
+    "SELECT slug FROM stations WHERE active=1 AND official_id IS NULL ORDER BY city LIMIT 100",
+  ).all<{ slug: string }>();
+  const paths = [
+    ...indexablePaths,
+    ...stations.results.map(
+      (station) => "/historico?station=" + encodeURIComponent(station.slug),
+    ),
+  ];
   const origin = new URL(c.env.PUBLIC_URL).origin;
   return c.body(
     '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
@@ -460,17 +468,37 @@ export default {
         target.searchParams.set("station", station);
       return Response.redirect(target, 301);
     }
-    const publicHtml = url.pathname === "/";
+    const pagePath = url.pathname.replace(/\/$/, "") || "/";
+    if (pagePath === "/admin" && env.ASSETS) {
+      const asset = await env.ASSETS.fetch(new URL("/index.html", request.url));
+      const headers = new Headers(asset.headers);
+      headers.set("X-Robots-Tag", "noindex");
+      headers.set("Cache-Control", "no-store");
+      return new Response(asset.body, { status: asset.status, headers });
+    }
+    const publicHtml =
+      (request.method === "GET" || request.method === "HEAD") &&
+      hasPublicPage(pagePath);
+    const historyStation =
+      pagePath === "/historico" ? url.searchParams.get("station") : null;
     const cacheable =
       request.method === "GET" &&
       !request.headers.has("authorization") &&
-      (publicHtml || !url.search) &&
+      (publicHtml
+        ? !historyStation || key.test(historyStation)
+        : !url.search) &&
       (publicHtml ||
         /^\/api\/v1\/(stations(?:\/[a-z0-9-]+)?|prices|status|sources)$/.test(
           url.pathname,
         ));
     const cacheKey = new Request(
-      url.origin + url.pathname + (publicHtml ? "" : url.search),
+      url.origin +
+        (publicHtml
+          ? pagePath +
+            (historyStation
+              ? "?station=" + encodeURIComponent(historyStation)
+              : "")
+          : url.pathname + url.search),
     );
     const cache = cacheable
       ? await caches.open(

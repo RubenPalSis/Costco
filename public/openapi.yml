@@ -74,7 +74,7 @@ paths:
         - { name: from, in: query, schema: { type: string, format: date } }
         - { name: to, in: query, schema: { type: string, format: date } }
         - { name: limit, in: query, schema: { type: integer, maximum: 366 } }
-        - { name: offset, in: query, schema: { type: integer, maximum: 5000 } }
+        - { name: offset, in: query, schema: { type: integer, maximum: 9007199254740991 } }
       responses:
         {
           "200": { $ref: "#/components/responses/Data" },

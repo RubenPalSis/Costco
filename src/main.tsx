@@ -11,7 +11,7 @@ import {
   type Price,
   type Station,
 } from "./data";
-import { independenceNotice } from "./identity";
+import { independenceNotice, navigation as nav, legal } from "./identity";
 import "./style.css";
 
 const HistoryChart = lazy(() =>
@@ -20,21 +20,6 @@ const HistoryChart = lazy(() =>
 const SavingsChart = lazy(() =>
   import("./charts").then((module) => ({ default: module.SavingsChart })),
 );
-const nav = [
-  ["/", "Inicio"],
-  ["/historico", "Histórico"],
-  ["/calculadora", "Calculadora"],
-  ["/favoritos", "Favoritos"],
-];
-const legal = [
-  ["aviso-legal", "Aviso legal"],
-  ["privacidad", "Privacidad"],
-  ["cookies", "Cookies"],
-  ["condiciones", "Condiciones"],
-  ["contacto", "Contacto"],
-  ["fuentes", "Fuentes"],
-  ["sobre-nosotros", "Sobre nosotros"],
-];
 function readFavorites(): string[] {
   try {
     const value: unknown = JSON.parse(
@@ -173,11 +158,11 @@ function App() {
         : [...current, slug],
     );
   useEffect(() => {
+    if (document.querySelector("link[rel=canonical]")) return;
     const label =
       nav.find(([url]) => url === path)?.[1] ??
       legal.find(([url]) => "/" + url === path)?.[1];
     if (label && path !== "/") document.title = label + " | " + brand.name;
-    if (document.querySelector("link[rel=canonical]")) return;
     const canonical = document.createElement("link");
     canonical.rel = "canonical";
     canonical.href = location.origin + path;
@@ -187,6 +172,10 @@ function App() {
     };
   }, [path]);
   const member = prices.filter((p) => p.source === "telegram");
+  const linkedStation =
+    path === "/historico"
+      ? stations.find((station) => station.slug === initialStation())
+      : undefined;
   const legalPage = legal.find(([url]) => "/" + url === path);
   let content: ReactNode;
   if (legalPage) content = <Legal slug={legalPage[0]} title={legalPage[1]} />;
@@ -206,7 +195,10 @@ function App() {
       <>
         <Heading
           label="Evolución"
-          title="Histórico de precios"
+          title={
+            "Histórico de precios" +
+            (linkedStation ? " de " + linkedStation.name : "")
+          }
           description="Consulta cuándo cambió el precio de cada combustible."
         />
         <History stations={stations} favorites={favorites} toggle={toggle} />
@@ -300,27 +292,39 @@ function App() {
         )}
         {content}
       </main>
-      <footer>
-        <div className="shell footer">
-          <div>
+      <footer className="site-footer">
+        <div className="shell footer-grid">
+          <div className="footer-intro">
             <a className="brand" href="/">
               <span>
                 <Fuel size={18} />
               </span>
               {brand.name}
             </a>
-            <p>Proyecto personal e independiente de Costco.</p>
-            <p>
-              Desarrollado por <a href="https://zetaweb.es/">zetaweb.es</a>
-            </p>
+            <p>Precios de combustible para socios de Costco en España.</p>
           </div>
-          <nav aria-label="Información legal">
+          <nav aria-label="Explorar el sitio">
+            <h2>Explorar</h2>
+            {nav.map(([url, label]) => (
+              <a key={url} href={url}>
+                {label}
+              </a>
+            ))}
+          </nav>
+          <nav aria-label="Información del sitio">
+            <h2>Información</h2>
             {legal.map(([url, label]) => (
               <a key={url} href={"/" + url}>
                 {label}
               </a>
             ))}
           </nav>
+        </div>
+        <div className="shell footer-bottom">
+          <p>Proyecto personal e independiente de Costco.</p>
+          <p>
+            Desarrollado por <a href="https://zetaweb.es/">zetaweb.es</a>
+          </p>
         </div>
       </footer>
     </>
@@ -484,12 +488,21 @@ function History({
     [days, setDays] = useState("90"),
     [start, setStart] = useState(""),
     [end, setEnd] = useState("");
+  const [page, setPage] = useState(1);
+  const [extraPage, setExtraPage] = useState<{
+    key: string;
+    rows: Price[];
+    error?: string;
+  }>();
+  const pageSize = 10;
   const source = "telegram";
   type Series = {
     data: Price[];
+    query?: string;
     since?: string;
     until?: string;
     summary?: {
+      changes?: number;
       average: number | null;
       baseline: number | null;
       minimum: number | null;
@@ -501,7 +514,13 @@ function History({
     [loading, setLoading] = useState(false);
   const selected = station || stations[0]?.slug || "";
   useEffect(() => {
-    if (!selected || (days === "custom" && (!start || !end))) return;
+    setPage(1);
+    setExtraPage(undefined);
+    if (!selected || (days === "custom" && (!start || !end))) {
+      setSeries({});
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     async function load() {
       setError("");
@@ -529,7 +548,11 @@ function History({
         );
         if (!controller.signal.aborted)
           setSeries({
-            [selected]: { ...result, data: [...result.data].reverse() },
+            [selected]: {
+              ...result,
+              data: [...result.data].reverse(),
+              query: query.toString(),
+            },
           });
       } catch (e) {
         if (!controller.signal.aborted) setError((e as Error).message);
@@ -542,6 +565,40 @@ function History({
   }, [selected, fuel, source, days, start, end]);
   const main = series[selected];
   const rows = main?.data ?? [];
+  const total = main?.summary?.changes ?? rows.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const offset = (currentPage - 1) * pageSize;
+  const needsQuery =
+    !!main?.query && Math.min(offset + pageSize, total) > rows.length;
+  const extraKey = needsQuery
+    ? main?.query + "&limit=" + pageSize + "&offset=" + offset
+    : undefined;
+  useEffect(() => {
+    if (!extraKey) return;
+    const controller = new AbortController();
+    void api<Series>("/prices/history?" + extraKey, {
+      signal: controller.signal,
+    })
+      .then((result) => {
+        if (!controller.signal.aborted)
+          setExtraPage({ key: extraKey, rows: result.data });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setExtraPage({
+            key: extraKey,
+            rows: [],
+            error: (error as Error).message,
+          });
+      });
+    return () => controller.abort();
+  }, [extraKey]);
+  const activeExtra = extraPage?.key === extraKey ? extraPage : undefined;
+  const visibleRows = needsQuery
+    ? (activeExtra?.rows ?? [])
+    : [...rows].reverse().slice(offset, offset + pageSize);
+
   const chart = Object.entries(series).map(([id, result]) => {
     const points = result.data.map((p) => ({
       time: Date.parse(p.published_at),
@@ -691,7 +748,7 @@ function History({
               label="Variación del periodo"
               value={delta.toFixed(2) + " %"}
             />
-            <Metric label="Cambios mostrados" value={String(rows.length)} />
+            <Metric label="Cambios registrados" value={String(total)} />
           </div>
           <Suspense fallback={<Loading />}>
             <HistoryChart series={chart} />
@@ -713,7 +770,7 @@ function History({
             ))}
           </div>
           <p className="muted">
-            {rows.length} observaciones con cambios en el periodo.{" "}
+            {total} observaciones con cambios en el periodo.{" "}
             {Object.values(series).some((s) => s.data.length === 366) &&
               "La gráfica muestra hasta 366 cambios recientes por estación. "}{" "}
             Cobertura según las publicaciones disponibles.
@@ -731,7 +788,21 @@ function History({
                 </tr>
               </thead>
               <tbody>
-                {[...rows].reverse().map((p) => (
+                {needsQuery && !activeExtra && (
+                  <tr>
+                    <td colSpan={3} role="status">
+                      Cargando cambios…
+                    </td>
+                  </tr>
+                )}
+                {activeExtra?.error && (
+                  <tr>
+                    <td colSpan={3} role="alert">
+                      {activeExtra.error}
+                    </td>
+                  </tr>
+                )}
+                {visibleRows.map((p) => (
                   <tr key={p.event}>
                     <td>{stamp(p.published_at)}</td>
                     <td>{euros(p.price / 1000)}</td>
@@ -743,6 +814,32 @@ function History({
               </tbody>
             </table>
           </div>
+          {pageCount > 1 && (
+            <nav
+              className="history-pagination"
+              aria-label="Paginación del histórico"
+            >
+              <button
+                type="button"
+                className="button"
+                onClick={() => setPage(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                Anterior
+              </button>
+              <p aria-live="polite">
+                Página {currentPage} de {pageCount}
+              </p>
+              <button
+                type="button"
+                className="button"
+                onClick={() => setPage(currentPage + 1)}
+                disabled={currentPage === pageCount}
+              >
+                Siguiente
+              </button>
+            </nav>
+          )}
         </>
       )}
     </section>

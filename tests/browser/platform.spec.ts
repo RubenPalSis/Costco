@@ -170,3 +170,51 @@ test("el aviso de independencia es visible en portada y aviso legal", async ({
   await expect(page.getByText(/creado por iniciativa propia/)).toBeVisible();
   await expect(page.getByText(/ni respaldado por Costco/)).toBeVisible();
 });
+
+test("paginas de hasta diez cambios y vuelve a la primera al filtrar", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/prices/history?**", (route) =>
+    route.fulfill({
+      json: {
+        data: Array.from({ length: 23 }, (_, i) => ({
+          ...price,
+          event: String(i),
+          price: 1200 + i,
+          published_at: new Date(Date.UTC(2026, 10, 24 - i, 9)).toISOString(),
+        })),
+        summary: {
+          changes: 23,
+          average: 1200,
+          minimum: 1200,
+          maximum: 1222,
+          baseline: null,
+        },
+      },
+    }),
+  );
+  await page.goto("/historico");
+  const rows = page.locator("tbody tr");
+  await expect(rows).toHaveCount(10);
+  const pagination = page.getByRole("navigation", {
+    name: "Paginación del histórico",
+  });
+  await expect(pagination.getByText("Página 1 de 3")).toBeVisible();
+  await expect(
+    pagination.getByRole("button", { name: "Anterior" }),
+  ).toBeDisabled();
+  await pagination.getByRole("button", { name: "Siguiente" }).click();
+  await expect(rows).toHaveCount(10);
+  await expect(pagination.getByText("Página 2 de 3")).toBeVisible();
+  await pagination.getByRole("button", { name: "Siguiente" }).click();
+  await expect(rows).toHaveCount(3);
+  await expect(
+    pagination.getByRole("button", { name: "Siguiente" }),
+  ).toBeDisabled();
+  await page.getByRole("combobox", { name: "Periodo" }).selectOption("30");
+  await expect(pagination.getByText("Página 1 de 3")).toBeVisible();
+  await expect(rows).toHaveCount(10);
+  await expect(
+    page.getByRole("contentinfo").getByRole("link", { name: "zetaweb.es" }),
+  ).toHaveAttribute("href", "https://zetaweb.es/");
+});

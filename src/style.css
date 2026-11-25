@@ -99,8 +99,7 @@ main {
   border-top: 4px solid #c20d29;
   border-bottom: 1px solid var(--line);
 }
-.header-row,
-.footer {
+.header-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -598,18 +597,75 @@ th {
 .prose {
   max-width: 800px;
 }
-footer {
-  border-top: 1px solid var(--line);
-  padding: 27px 0;
-  color: var(--muted);
-  background: var(--surface);
+.site-footer {
+  border-top: 4px solid #c20d29;
+  margin-top: 52px;
+  background: #082d57;
+  color: #cdddf0;
 }
-footer p {
-  margin: 10px 0 0;
-  font-size: 0.85rem;
+.site-footer a {
+  color: #fff;
 }
-footer nav {
-  justify-content: flex-end;
+.footer-grid {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.2fr) minmax(120px, 0.65fr) minmax(
+      180px,
+      1fr
+    );
+  gap: 28px 42px;
+  align-items: start;
+  padding-block: 38px;
+}
+.footer-intro p {
+  max-width: 30ch;
+  margin: 12px 0 0;
+}
+.site-footer nav {
+  display: grid;
+  gap: 8px;
+  justify-content: start;
+}
+.site-footer h2 {
+  margin: 0 0 4px;
+  color: #fff;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+.site-footer a:not(.brand) {
+  font-size: 0.9rem;
+  text-underline-offset: 4px;
+}
+.footer-bottom {
+  border-top: 1px solid #3c5d82;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  padding-block: 16px;
+}
+.footer-bottom p {
+  margin: 0;
+  font-size: 0.875rem;
+}
+.history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  padding-top: 16px;
+}
+.history-pagination p {
+  margin: 0;
+  text-align: center;
+}
+@media (max-width: 700px) {
+  .footer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .footer-intro {
+    grid-column: 1/-1;
+  }
 }
 @media (max-width: 1050px) {
   .menu-toggle {
@@ -674,13 +730,6 @@ footer nav {
   .detail-grid,
   .two-column {
     grid-template-columns: 1fr;
-  }
-  .footer {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .footer nav {
-    justify-content: flex-start;
   }
 }
 @media (max-width: 540px) {

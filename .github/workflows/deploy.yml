@@ -82,4 +82,7 @@ jobs:
           curl -fsS --retry 3 "$SITE_URL/api/v1/status" | jq -e '.telegramEnabled == true and (has("officialEnabled") | not)'
           curl -fsS --retry 3 "$SITE_URL/api/v1/sources" | jq -e '[.data[].id] == ["telegram"] and all(.data[]; has("url") | not)'
           curl -fsS --retry 3 "$SITE_URL/api/v1/prices" | jq -e '(.data|length)>0 and all(.data[]; .source == "telegram" and (has("source_url") | not))'
+          curl -fsS --retry 3 "$SITE_URL/robots.txt" | grep -F "$SITE_URL/sitemap.xml"
+          curl -fsS --retry 3 "$SITE_URL/sitemap.xml" | grep -F "$SITE_URL/historico?station="
+          curl -fsS --retry 3 "$SITE_URL/calculadora" | grep -F '<link rel="canonical"'
           printf 'Web publicada y verificada. %s\n' "$SITE_URL" >> "$GITHUB_STEP_SUMMARY"
