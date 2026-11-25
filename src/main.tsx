@@ -27,6 +27,7 @@ import {
   type Status,
 } from "./data";
 import { distance } from "../worker/distance";
+import { independenceNotice } from "./identity";
 import "./style.css";
 
 const FuelMap = lazy(() => import("./map"));
@@ -365,6 +366,14 @@ function App() {
         </div>
       </header>
       <main id="contenido" className="shell">
+        {path === "/" && (
+          <aside
+            className="notice independence"
+            aria-label="Proyecto independiente"
+          >
+            {independenceNotice}
+          </aside>
+        )}
         {error && (
           <p className="notice error" role="status">
             {error}.{" "}
@@ -384,7 +393,7 @@ function App() {
               </span>
               {brand.name}
             </a>
-            <p>Plataforma independiente, sin afiliación oficial con Costco.</p>
+            <p>Proyecto personal e independiente de Costco.</p>
           </div>
           <nav aria-label="Información legal">
             {legal.map(([url, label]) => (
@@ -786,7 +795,7 @@ function Card({
               {group.map((p) => (
                 <div className="price-row" key={p.fuel}>
                   <div>
-                    <strong>{fuels[p.fuel] ?? p.fuel}</strong>
+                    <strong>{p.fuel_name ?? fuels[p.fuel] ?? p.fuel}</strong>
                     <small>Último cambio · {stamp(p.published_at)}</small>
                   </div>
                   <div className="price-number">
@@ -834,12 +843,24 @@ function History({
   initial?: string;
 }) {
   const [station, setStation] = useState(initial ?? initialStation()),
+    [comparison, setComparison] = useState(""),
     [fuel, setFuel] = useState("gas95"),
     [source, setSource] = useState("telegram"),
     [days, setDays] = useState("90"),
     [start, setStart] = useState(""),
     [end, setEnd] = useState("");
-  const [rows, setRows] = useState<Price[]>([]),
+  type Series = {
+    data: Price[];
+    since?: string;
+    until?: string;
+    summary?: {
+      average: number | null;
+      baseline: number | null;
+      minimum: number | null;
+      maximum: number | null;
+    };
+  };
+  const [series, setSeries] = useState<Record<string, Series>>({}),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(false);
   const selected = station || stations[0]?.slug || "";
@@ -849,7 +870,7 @@ function History({
     async function load() {
       setError("");
       setLoading(true);
-      setRows([]);
+      setSeries({});
       try {
         const from =
           days === "custom"
@@ -866,11 +887,24 @@ function History({
           from,
         });
         if (days === "custom") query.set("to", end);
-        const { data } = await api<{ data: Price[] }>(
-          "/prices/history?" + query,
-          { signal: controller.signal },
+        const ids =
+          comparison && comparison !== selected
+            ? [selected, comparison]
+            : [selected];
+        const results = await Promise.all(
+          ids.map(async (id) => {
+            query.set("station", id);
+            const result = await api<Series>(
+              "/prices/history?" + query.toString(),
+              { signal: controller.signal },
+            );
+            return [
+              id,
+              { ...result, data: [...result.data].reverse() },
+            ] as const;
+          }),
         );
-        if (!controller.signal.aborted) setRows(data.reverse());
+        if (!controller.signal.aborted) setSeries(Object.fromEntries(results));
       } catch (e) {
         if (!controller.signal.aborted) setError((e as Error).message);
       } finally {
@@ -879,7 +913,36 @@ function History({
     }
     void load();
     return () => controller.abort();
-  }, [selected, fuel, source, days, start, end]);
+  }, [selected, comparison, fuel, source, days, start, end]);
+  const main = series[selected];
+  const rows = main?.data ?? [];
+  const chart = Object.entries(series).map(([id, result]) => {
+    const points = result.data.map((p) => ({
+      time: Date.parse(p.published_at),
+      price: p.price / 1000,
+    }));
+    if (
+      result.data.length < 366 &&
+      result.summary?.baseline != null &&
+      result.since &&
+      result.until &&
+      result.since < result.until
+    )
+      points.unshift({
+        time: Date.parse(result.since),
+        price: result.summary.baseline / 1000,
+      });
+    if (points.length && result.until)
+      points.push({
+        time: Date.parse(result.until),
+        price: points.at(-1)!.price,
+      });
+    return {
+      id,
+      name: stations.find((s) => s.slug === id)?.name ?? id,
+      points,
+    };
+  });
   const values = rows.map((row) => row.price);
   const first = rows[0],
     last = rows.at(-1);
@@ -887,15 +950,18 @@ function History({
     first && last ? ((last.price - first.price) / first.price) * 100 : 0;
   function csv() {
     const data = [
-      "fecha_utc;precio_eur_l;anterior_eur_l;fuente",
-      ...rows.map((p) =>
-        [
-          p.published_at,
-          (p.price / 1000).toFixed(3),
-          p.previous === null ? "" : (p.previous / 1000).toFixed(3),
-          p.source,
-        ].join(";"),
-      ),
+      "estacion;fecha_utc;precio_eur_l;anterior_eur_l;fuente",
+      ...Object.values(series)
+        .flatMap((s) => s.data)
+        .map((p) =>
+          [
+            p.station,
+            p.published_at,
+            (p.price / 1000).toFixed(3),
+            p.previous === null ? "" : (p.previous / 1000).toFixed(3),
+            p.source,
+          ].join(";"),
+        ),
     ].join("\n");
     const href = URL.createObjectURL(
       new Blob([data], { type: "text/csv;charset=utf-8" }),
@@ -912,6 +978,20 @@ function History({
       <div className="form-grid">
         <Select label="Gasolinera" value={selected} onChange={setStation}>
           <StationOptions stations={stations} />
+        </Select>
+        <Select
+          label="Comparar con"
+          value={comparison}
+          onChange={setComparison}
+        >
+          <option value="">Sin segunda estación</option>
+          {stations
+            .filter((s) => s.slug !== selected)
+            .map((s) => (
+              <option key={s.slug} value={s.slug}>
+                {s.name}
+              </option>
+            ))}
         </Select>
         <Select label="Combustible" value={fuel} onChange={setFuel}>
           <FuelOptions />
@@ -955,18 +1035,30 @@ function History({
         <Loading />
       ) : error ? (
         <p role="alert">{error}</p>
-      ) : !rows.length ? (
+      ) : !chart.some((s) => s.points.length) ? (
         <Empty>No hay cambios registrados para esta selección.</Empty>
       ) : (
         <>
           <div className="metrics">
             <Metric
               label="Mínimo registrado"
-              value={euros(Math.min(...values) / 1000)}
+              value={
+                main?.summary?.minimum != null
+                  ? euros(main.summary.minimum / 1000)
+                  : values.length
+                    ? euros(Math.min(...values) / 1000)
+                    : "—"
+              }
             />
             <Metric
               label="Máximo registrado"
-              value={euros(Math.max(...values) / 1000)}
+              value={
+                main?.summary?.maximum != null
+                  ? euros(main.summary.maximum / 1000)
+                  : values.length
+                    ? euros(Math.max(...values) / 1000)
+                    : "—"
+              }
             />
             <Metric
               label="Variación del periodo"
@@ -975,11 +1067,29 @@ function History({
             <Metric label="Cambios mostrados" value={String(rows.length)} />
           </div>
           <Suspense fallback={<Loading />}>
-            <HistoryChart data={rows} />
+            <HistoryChart series={chart} />
           </Suspense>
+          <div className="metrics">
+            {Object.entries(series).map(([id, result]) => (
+              <Metric
+                key={id}
+                label={
+                  "Media ponderada · " +
+                  (stations.find((s) => s.slug === id)?.name ?? id)
+                }
+                value={
+                  result.summary?.average == null
+                    ? "—"
+                    : euros(result.summary.average / 1000) + "/L"
+                }
+              />
+            ))}
+          </div>
           <p className="muted">
-            {rows.length} observaciones con cambios en el periodo. Cobertura
-            según las publicaciones disponibles.
+            {rows.length} observaciones con cambios en el periodo.{" "}
+            {Object.values(series).some((s) => s.data.length === 366) &&
+              "La gráfica muestra hasta 366 cambios recientes por estación. "}{" "}
+            Cobertura según las publicaciones disponibles.
           </p>
           <button className="button" onClick={csv}>
             Descargar CSV
@@ -1095,7 +1205,8 @@ function Compare({
               euros((official.price - member.price) / 1000) +
               "/L. "
             : ""}
-          Resultados de MITECO en la provincia de la estación Costco.
+          Hasta cinco precios de MITECO en el radio seleccionado. Las provincias
+          se actualizan por turnos.
         </p>
         {loading ? (
           <Loading />
@@ -1134,6 +1245,7 @@ function Compare({
                       <td>
                         <strong>{p.name}</strong>
                         <small>{p.address}</small>
+                        <small>Verificado · {stamp(p.verified_at)}</small>
                       </td>
                       <td>{p.distance.toFixed(1)} km</td>
                       <td>{euros(p.price / 1000)}</td>
@@ -1786,6 +1898,7 @@ function Admin() {
                 messages: "Mensajes",
                 subscriptions: "Suscripciones",
                 recent_push: "Avisos recientes",
+                recent_provinces: "Provincias en las últimas 72 h",
               }).map(([key, label]) => (
                 <Metric
                   key={key}
@@ -1826,7 +1939,303 @@ function Admin() {
           ))}
         </ul>
       </section>
+      {overview && token && <AdminEditor key={token} token={token} />}
     </>
+  );
+}
+
+function AdminEditor({ token }: { token: string }) {
+  type Catalog = {
+    stations: { slug: string; name: string; active: number }[];
+    fuels: { id: string; name: string }[];
+    aliases: { alias: string; station: string }[];
+    settings: { key: string; value: string }[];
+    audit: { action: string; created_at: string }[];
+    corrections: {
+      station: string;
+      fuel: string;
+      price: number;
+      reason: string;
+    }[];
+  };
+  type Observation = {
+    event: string;
+    published_at: string;
+    original: number;
+    price: number;
+  };
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [observations, setObservations] = useState<Observation[]>([]);
+  const [action, setAction] = useState("station"),
+    [station, setStation] = useState(""),
+    [fuel, setFuel] = useState("gas95"),
+    [source, setSource] = useState("telegram");
+  const [event, setEvent] = useState(""),
+    [name, setName] = useState(""),
+    [alias, setAlias] = useState(""),
+    [price, setPrice] = useState("");
+  const [active, setActive] = useState(true),
+    [paused, setPaused] = useState(false),
+    [reason, setReason] = useState(""),
+    [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const headers = {
+    authorization: "Bearer " + token,
+    "content-type": "application/json",
+  };
+  const selected = station || catalog?.stations[0]?.slug || "";
+  useEffect(() => {
+    const controller = new AbortController();
+    void api<Catalog>("/admin/config", {
+      headers: { authorization: "Bearer " + token },
+      signal: controller.signal,
+    })
+      .then((data) => {
+        if (!controller.signal.aborted) setCatalog(data);
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setNotice(e.message);
+      });
+    return () => controller.abort();
+  }, [token]);
+  useEffect(() => {
+    if (action !== "price" || !selected) return;
+    const controller = new AbortController();
+    const query = new URLSearchParams({ station: selected, fuel, source });
+    void api<{ data: Observation[] }>("/admin/config/observations?" + query, {
+      headers: { authorization: "Bearer " + token },
+      signal: controller.signal,
+    })
+      .then((result) => {
+        if (!controller.signal.aborted) setObservations(result.data);
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setNotice(e.message);
+      });
+    return () => controller.abort();
+  }, [action, selected, fuel, source, token]);
+  function changeFilter(setter: (value: string) => void, value: string) {
+    setEvent("");
+    setObservations([]);
+    setter(value);
+  }
+  async function save() {
+    setBusy(true);
+    setNotice("");
+    try {
+      await api("/admin/config", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          action,
+          station: selected,
+          fuel,
+          source,
+          event,
+          name,
+          alias,
+          price: Math.round(Number(price) * 1000),
+          active,
+          paused,
+          reason,
+        }),
+      });
+      setCatalog(await api<Catalog>("/admin/config", { headers }));
+      if (action === "price") {
+        const query = new URLSearchParams({ station: selected, fuel, source });
+        setObservations(
+          (
+            await api<{ data: Observation[] }>(
+              "/admin/config/observations?" + query,
+              { headers },
+            )
+          ).data,
+        );
+      }
+      setNotice("Cambio guardado y auditado.");
+      setReason("");
+    } catch (e) {
+      setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="panel feature">
+      <h2>Gestionar catálogo y precios</h2>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+      >
+        <div className="form-grid">
+          <Select
+            label="Operación"
+            value={action}
+            onChange={(v) => changeFilter(setAction, v)}
+          >
+            <option value="station">Cambiar nombre o visibilidad</option>
+            <option value="alias">Asignar alias de Telegram</option>
+            <option value="fuel">Renombrar combustible</option>
+            <option value="source">Pausar o reanudar fuente</option>
+            <option value="price">Corregir una observación</option>
+          </Select>
+          {["station", "alias", "price"].includes(action) && (
+            <Select
+              label="Estación"
+              value={selected}
+              onChange={(v) => changeFilter(setStation, v)}
+            >
+              {catalog?.stations.map((s) => (
+                <option key={s.slug} value={s.slug}>
+                  {s.name}
+                  {s.active ? "" : " (oculta)"}
+                </option>
+              ))}
+            </Select>
+          )}
+          {["fuel", "price"].includes(action) && (
+            <Select
+              label="Combustible"
+              value={fuel}
+              onChange={(v) => changeFilter(setFuel, v)}
+            >
+              {catalog?.fuels.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </Select>
+          )}
+          {["source", "price"].includes(action) && (
+            <Select
+              label="Fuente"
+              value={source}
+              onChange={(v) => changeFilter(setSource, v)}
+            >
+              <option value="telegram">Telegram</option>
+              <option value="official">MITECO</option>
+            </Select>
+          )}
+          {["station", "fuel"].includes(action) && (
+            <label>
+              Nombre nuevo
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={100}
+                required
+              />
+            </label>
+          )}
+          {action === "station" && (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={(e) => setActive(e.target.checked)}
+              />{" "}
+              Visible al público
+            </label>
+          )}
+          {action === "alias" && (
+            <label>
+              Nombre alternativo en Telegram
+              <input
+                value={alias}
+                onChange={(e) => setAlias(e.target.value)}
+                required
+              />
+            </label>
+          )}
+          {action === "source" && (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={paused}
+                onChange={(e) => setPaused(e.target.checked)}
+              />{" "}
+              Fuente en pausa
+            </label>
+          )}
+          {action === "price" && (
+            <>
+              <Select
+                label="Observación de origen"
+                value={event}
+                onChange={setEvent}
+              >
+                <option value="">Selecciona una fecha</option>
+                {observations.map((o) => (
+                  <option key={o.event} value={o.event}>
+                    {stamp(o.published_at)} · {euros(o.price / 1000)}/L
+                    {o.price !== o.original ? " (corregido)" : ""}
+                  </option>
+                ))}
+              </Select>
+              <label>
+                Precio corregido €/L
+                <input
+                  type="number"
+                  min=".300"
+                  max="5"
+                  step=".001"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  required
+                />
+              </label>
+            </>
+          )}
+          <label>
+            Motivo del cambio
+            <input
+              required
+              maxLength={300}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="actions">
+          <button
+            className="button primary"
+            disabled={busy || !catalog || (action === "price" && !event)}
+          >
+            Guardar cambio
+          </button>
+        </div>
+      </form>
+      {notice && <p role="status">{notice}</p>}
+      {catalog && (
+        <>
+          <h3>Fuentes pausadas</h3>
+          <p>
+            {catalog.settings
+              .filter((s) => s.value === "true")
+              .map((s) => s.key.replace("pause:", ""))
+              .join(", ") || "Ninguna"}
+          </p>
+          <h3>Alias registrados</h3>
+          <ul>
+            {catalog.aliases.map((a) => (
+              <li key={a.alias}>
+                {a.alias} → {a.station}
+              </li>
+            ))}
+          </ul>
+          <h3>Auditoría reciente</h3>
+          <ul>
+            {catalog.audit.map((a, i) => (
+              <li key={i}>
+                {a.created_at} UTC · {a.action}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -1834,9 +2243,10 @@ function Legal({ slug, title }: { slug: string; title: string }) {
   const content: Record<string, ReactNode> = {
     "aviso-legal": (
       <>
+        <p>{independenceNotice}</p>
         <p>
-          {brand.name} es un servicio independiente dedicado a comparar precios
-          de carburantes.
+          El nombre Costco se usa para identificar las gasolineras que se
+          consultan o comparan.
         </p>
         <p>
           {brand.operator
@@ -1910,11 +2320,13 @@ function Legal({ slug, title }: { slug: string; title: string }) {
       </>
     ),
     "sobre-nosotros": (
-      <p>
-        {brand.name} reúne precios y ubicaciones para ayudarte a comparar y
-        decidir si compensa desplazarte para repostar. Es una plataforma
-        independiente, sin afiliación oficial con Costco.
-      </p>
+      <>
+        <p>{independenceNotice}</p>
+        <p>
+          {brand.name} reúne precios y ubicaciones para ayudarte a decidir si
+          compensa desplazarte para repostar.
+        </p>
+      </>
     ),
   };
   return (

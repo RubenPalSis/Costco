@@ -19,6 +19,7 @@ export type Station = {
 export type Price = {
   station: string;
   fuel: string;
+  fuel_name?: string;
   source: string;
   price: number;
   previous: number | null;

@@ -71,3 +71,89 @@ test("calcula ahorro con cuota y desplazamiento", async ({ page }) => {
   await page.getByRole("spinbutton", { name: "Cuota anual (€)" }).fill("36");
   await expect(page.getByText("289,44")).toBeVisible();
 });
+
+test("el mapa muestra marcadores e indicaciones", async ({ page }) => {
+  await page.route("https://tile.openstreetmap.org/**", (route) =>
+    route.abort(),
+  );
+  await page.goto("/mapa");
+  await page.locator(".leaflet-interactive").first().click();
+  await expect(
+    page.getByRole("link", { name: "Abrir indicaciones" }),
+  ).toBeVisible();
+});
+
+test("el service worker muestra la página sin conexión", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => Boolean(navigator.serviceWorker.controller)),
+    )
+    .toBeTruthy();
+  await context.setOffline(true);
+  await page.goto("/calculadora");
+  await expect(
+    page.getByRole("heading", { name: "Estás sin conexión" }),
+  ).toBeVisible();
+});
+
+test("compara medias históricas de dos estaciones", async ({ page }) => {
+  await page.route("**/api/v1/stations", (route) =>
+    route.fulfill({
+      json: {
+        data: [
+          station,
+          { ...station, slug: "las-rozas", name: "Costco Las Rozas" },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/v1/prices/history?**", (route) => {
+    const compared = new URL(route.request().url()).searchParams.get("station");
+    const value = compared === "getafe" ? 1200 : 1300;
+    return route.fulfill({
+      json: {
+        data: [{ ...price, station: compared, price: value }],
+        since: "2026-11-23T00:00:00.000Z",
+        until: "2026-11-25T00:00:00.000Z",
+        summary: {
+          average: value,
+          minimum: value,
+          maximum: value,
+          baseline: value,
+        },
+      },
+    });
+  });
+  await page.goto("/historico?station=getafe");
+  await page
+    .getByRole("combobox", { name: "Comparar con" })
+    .selectOption("las-rozas");
+  await expect(page.getByText("Media ponderada · Costco Getafe")).toBeVisible();
+  await expect(
+    page.getByText("Media ponderada · Costco Las Rozas"),
+  ).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Descargar CSV" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("historico-getafe.csv");
+});
+
+test("el aviso de independencia es visible en portada y aviso legal", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("complementary", { name: "Proyecto independiente" }),
+  ).toContainText("no trabaja para Costco");
+  await page.goto("/aviso-legal");
+  await expect(page.getByText(/creado por iniciativa propia/)).toBeVisible();
+  await expect(page.getByText(/ni respaldado por Costco/)).toBeVisible();
+});

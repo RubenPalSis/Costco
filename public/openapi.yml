@@ -248,3 +248,54 @@ paths:
           "200": { $ref: "#/components/responses/Data" },
           "401": { $ref: "#/components/responses/Error" },
         }
+  /admin/config:
+    get:
+      summary: Catálogo editable, ajustes y auditoría reciente
+      security: [{ bearer: [] }]
+      responses:
+        "200": { $ref: "#/components/responses/Data" }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      summary: Modifica un registro y guarda el motivo en auditoría
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, reason]
+              properties:
+                action:
+                  { type: string, enum: [station, alias, fuel, source, price] }
+                reason: { type: string, maxLength: 300 }
+                station: { type: string }
+                fuel: { type: string }
+                source: { type: string, enum: [telegram, official] }
+                event: { type: string }
+                name: { type: string }
+                alias: { type: string }
+                price: { type: integer, minimum: 300, maximum: 5000 }
+                active: { type: boolean }
+                paused: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/Data" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/config/observations:
+    get:
+      summary: Observaciones originales y corregidas, hasta 30 por filtro
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: station, in: query, required: true, schema: { type: string } }
+        - { name: fuel, in: query, required: true, schema: { type: string } }
+        - {
+            name: source,
+            in: query,
+            required: true,
+            schema: { type: string, enum: [telegram, official] },
+          }
+      responses:
+        "200": { $ref: "#/components/responses/Data" }
+        "401": { $ref: "#/components/responses/Error" }

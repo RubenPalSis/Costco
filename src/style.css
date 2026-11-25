@@ -713,3 +713,10 @@ footer nav {
     scroll-behavior: auto !important;
   }
 }
+
+.independence {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-inline-start: 3px solid var(--green);
+  font-size: 0.86rem;
+}

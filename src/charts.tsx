@@ -1,6 +1,7 @@
 import {
   CartesianGrid,
   LineChart,
+  Legend,
   Line,
   XAxis,
   YAxis,
@@ -9,29 +10,61 @@ import {
   BarChart,
   Bar,
 } from "recharts";
-import { euros, stamp, type Price } from "./data";
-export function HistoryChart({ data }: { data: Price[] }) {
+import { euros, stamp } from "./data";
+export function HistoryChart({
+  series,
+}: {
+  series: {
+    id: string;
+    name: string;
+    points: { time: number; price: number }[];
+  }[];
+}) {
+  const times = new Map<number, Record<string, number>>();
+  for (const row of series)
+    for (const point of row.points) {
+      const entry = times.get(point.time) ?? { time: point.time };
+      entry[row.id] = point.price;
+      times.set(point.time, entry);
+    }
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <LineChart
-        data={data.map((p) => ({
-          date: stamp(p.published_at),
-          price: p.price / 1000,
-        }))}
-      >
+      <LineChart data={[...times.values()].sort((a, b) => a.time - b.time)}>
         <CartesianGrid strokeDasharray="4 4" opacity={0.25} />
-        <XAxis dataKey="date" minTickGap={70} />
+        <XAxis
+          dataKey="time"
+          type="number"
+          domain={["dataMin", "dataMax"]}
+          minTickGap={70}
+          tickFormatter={(value) =>
+            new Intl.DateTimeFormat("es-ES", {
+              timeZone: "Europe/Madrid",
+              day: "numeric",
+              month: "short",
+            }).format(Number(value))
+          }
+        />
         <YAxis domain={["auto", "auto"]} tickFormatter={(v) => euros(v, 2)} />
         <Tooltip
-          formatter={(value) => [euros(Number(value)) + "/L", "Precio"]}
+          labelFormatter={(value) =>
+            stamp(new Date(Number(value)).toISOString())
+          }
+          formatter={(value, name) => [euros(Number(value)) + "/L", name]}
         />
-        <Line
-          type="stepAfter"
-          dataKey="price"
-          stroke="#168560"
-          strokeWidth={3}
-          dot={data.length < 10}
-        />
+        <Legend />
+        {series.map((row, index) => (
+          <Line
+            key={row.id}
+            name={row.name}
+            type="stepAfter"
+            dataKey={row.id}
+            stroke={index === 0 ? "#168560" : "#7c4dc0"}
+            strokeDasharray={index === 0 ? undefined : "6 4"}
+            strokeWidth={3}
+            connectNulls
+            dot={row.points.length < 10}
+          />
+        ))}
       </LineChart>
     </ResponsiveContainer>
   );

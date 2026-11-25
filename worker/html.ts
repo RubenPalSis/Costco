@@ -1,4 +1,5 @@
 import { type Env } from "./sync";
+import { independenceNotice } from "../src/identity";
 
 const escape = (value: string) =>
   value.replace(
@@ -52,7 +53,7 @@ export async function publicPage(request: Request, env: Env) {
       " en " +
       station.city +
       "."
-    : "Consulta los precios publicados de las gasolineras Costco en España.";
+    : "Proyecto personal independiente de Costco para comparar precios de combustible en España.";
   const prices = station
     ? (
         await env.DB.prepare(
@@ -188,6 +189,9 @@ export async function publicPage(request: Request, env: Env) {
       element(el) {
         el.setInnerContent(
           '<main class="shell"><nav aria-label="Navegación"><a href="/">Inicio</a><a href="/historico">Histórico</a><a href="/comparador">Comparador</a></nav>' +
+            '<aside class="notice independence" aria-label="Proyecto independiente">' +
+            escape(independenceNotice) +
+            "</aside>" +
             content +
             "</main>",
           { html: true },

@@ -23,7 +23,7 @@ export function pushEndpoint(value: unknown): value is string {
     return false;
   }
 }
-export async function sendAlerts(env: Env) {
+export async function sendAlerts(env: Env, deliver = fetch) {
   const {
     VAPID_PUBLIC_KEY: publicKey,
     VAPID_PRIVATE_KEY: privateKey,
@@ -34,12 +34,13 @@ export async function sendAlerts(env: Env) {
     `SELECT a.id, p.event, p.station, p.fuel, p.price, p.previous, s.endpoint, s.p256dh, s.auth
     FROM price_alerts a JOIN current_prices p ON p.station=a.station AND p.fuel=a.fuel AND p.source='telegram'
     JOIN push_subscriptions s ON s.user_id=a.user_id
+    JOIN stations st ON st.slug=p.station AND st.active=1
     WHERE datetime(p.published_at) > datetime('now','-30 minutes') AND datetime(p.published_at) >= datetime(a.created_at)
       AND NOT EXISTS (SELECT 1 FROM notification_logs n WHERE n.alert_id=a.id AND n.event=p.event)
       AND (a.kind='lower' AND p.price<p.previous OR a.kind='higher' AND p.price>p.previous
         OR a.kind='threshold' AND p.price<a.threshold AND (p.previous IS NULL OR p.previous>=a.threshold)
         OR a.kind='minimum' AND p.previous IS NOT NULL AND NOT EXISTS (
-          SELECT 1 FROM observations o WHERE o.station=p.station AND o.fuel=p.fuel AND o.source=p.source AND o.published_at<p.published_at AND o.price<=p.price))
+          SELECT 1 FROM effective_observations o WHERE o.station=p.station AND o.fuel=p.fuel AND o.source=p.source AND o.published_at<p.published_at AND o.price<=p.price))
     LIMIT 8`,
   ).all<{
     id: string;
@@ -84,7 +85,7 @@ export async function sendAlerts(env: Env) {
         },
         { publicKey, privateKey, subject },
       );
-      const result = await fetch(row.endpoint, {
+      const result = await deliver(row.endpoint, {
         ...payload,
         redirect: "error",
         signal: AbortSignal.timeout(5000),

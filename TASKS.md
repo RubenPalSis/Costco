@@ -11,12 +11,15 @@
 - [ ] Configurar titular, contacto, cuenta, D1 remoto, URL pública y secretos.
 - [ ] Validar Web Push real en navegador y PWA instalada en plataformas compatibles.
 - [ ] Medir consumo de CPU real de los cron y de D1 en el plan gratuito.
-- [ ] Ampliar detección de estaciones y comparación a provincias limítrofes.
+- [x] Ampliar detección de estaciones y comparación a provincias limítrofes.
 - [x] Publicar el contrato OpenAPI y renderizar en el Worker la portada y las fichas de estación.
 - [x] Validar el parser y las escrituras D1 con respuestas descargadas de Telegram y MITECO.
 - [x] Verificar favoritos, navegación, exportación disponible y calculadora en Chromium.
 - [ ] Verificar conectividad del Worker desplegado con Telegram y MITECO. Las descargas de terminal funcionaron; la red saliente del emulador local devolvió error.
-- [ ] Ampliar la gestión administrativa a edición de estaciones, combustibles, fuentes, alias y correcciones auditadas.
-- [ ] Completar comparación histórica multiestación y medias ponderadas por duración.
-- [ ] Verificar el consumo bajo carga sostenida y evaluar Turnstile y Cloudflare Access antes de habilitar alertas a gran escala.
+- [x] Ampliar la gestión administrativa a edición de estaciones, combustibles, fuentes, alias y correcciones auditadas.
+- [x] Completar comparación histórica multiestación y medias ponderadas por duración.
+- [x] Optimizar el histórico con una consulta acotada a la estación y al rango, y medir una ráfaga local con 5000 observaciones.
+- [x] Verificar en Chromium la gráfica comparativa, la descarga CSV, el mapa y el modo sin conexión.
+- [x] Verificar el alta, la baja, el cifrado y la deduplicación de Web Push con transporte simulado.
+- [ ] Medir consumo bajo carga de producción y configurar Turnstile o Cloudflare Access según el dominio y la cuenta.
 - [ ] Autorizar y verificar despliegue público, Search Console e importación histórica completa disponible.

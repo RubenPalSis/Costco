@@ -20,6 +20,18 @@ export type Env = {
   VAPID_PRIVATE_KEY?: string;
   VAPID_SUBJECT?: string;
 };
+export async function sourceEnabled(env: Env, source: "telegram" | "official") {
+  if (
+    (source === "telegram" ? env.TELEGRAM_ENABLED : env.OFFICIAL_ENABLED) !==
+    "true"
+  )
+    return false;
+  return (
+    (await env.DB.prepare("SELECT value FROM application_settings WHERE key=?")
+      .bind("pause:" + source)
+      .first<string>("value")) !== "true"
+  );
+}
 export async function digest(value: string) {
   const hash = await crypto.subtle.digest(
     "SHA-256",
@@ -45,7 +57,20 @@ async function saveMessage(db: D1Database, message: Message) {
       .prepare("DELETE FROM observations WHERE source='telegram' AND event=?")
       .bind(event),
   ];
-  for (const quote of message.quotes) {
+  const aliases = new Map(
+    (
+      await db
+        .prepare("SELECT alias,station FROM station_aliases")
+        .all<{ alias: string; station: string }>()
+    ).results.map((row) => [row.alias, row.station]),
+  );
+  const stored = new Map(
+    message.quotes.map((quote) => {
+      const station = aliases.get(quote.station) ?? quote.station;
+      return [station + ":" + quote.fuel, { ...quote, station }] as const;
+    }),
+  );
+  for (const quote of stored.values()) {
     statements.push(
       db
         .prepare(
@@ -114,7 +139,7 @@ async function ingestTelegram(
   importHistory = false,
   fixture?: Response,
 ) {
-  if (env.TELEGRAM_ENABLED !== "true" && !fixture)
+  if (!fixture && !(await sourceEnabled(env, "telegram")))
     throw new Error("La fuente Telegram está desactivada");
   const source = importHistory ? "telegram-history" : "telegram";
   const state = await env.DB.prepare(
@@ -253,128 +278,216 @@ export function syncOfficial(env: Env, fixture?: Response) {
   return withLock(env.DB, "official", () => ingestOfficial(env, fixture));
 }
 async function ingestOfficial(env: Env, fixture?: Response) {
-  if (env.OFFICIAL_ENABLED !== "true" && !fixture)
+  if (!fixture && !(await sourceEnabled(env, "official")))
     throw new Error("La fuente oficial está desactivada");
-  const response =
-    fixture ??
-    (await fetch(officialUrl + "FiltroProvincia/50", {
-      signal: AbortSignal.timeout(12000),
-    }));
-  const urls = ["48", "28", "29", "41"].map(
-    (id) => officialUrl + "FiltroProvincia/" + id,
-  );
-  const responses = fixture
-    ? [response]
-    : [
-        response,
-        ...(await Promise.all(
-          urls.map((url) => fetch(url, { signal: AbortSignal.timeout(12000) })),
-        )),
-      ];
-  let changed = 0;
-  for (const item of responses) {
-    if (!item.ok) throw new Error("MITECO HTTP " + item.status);
-    const body = await item.json<{
-      Fecha: string;
-      ListaEESSPrecio: Official[];
-    }>();
+  const state = await env.DB.prepare(
+    "SELECT cursor FROM sync_state WHERE source='official'",
+  ).first<number>("cursor");
+  const priority = [48, 28, 29, 41, 50];
+  const cycle = [
+    ...priority,
+    ...Array.from({ length: 52 }, (_, index) => index + 1).filter(
+      (id) => !priority.includes(id),
+    ),
+  ];
+  const province = String(
+    cycle[(cycle.indexOf(state ?? 0) + 1) % cycle.length],
+  ).padStart(2, "0");
+  let body: { Fecha: string; ListaEESSPrecio: Official[] };
+  let date: string;
+  try {
+    const response =
+      fixture ??
+      (await fetch(officialUrl + "FiltroProvincia/" + province, {
+        signal: AbortSignal.timeout(12000),
+      }));
+    if (!response.ok) throw new Error("MITECO HTTP " + response.status);
+    body = await response.json<typeof body>();
     if (!Array.isArray(body.ListaEESSPrecio))
       throw new Error("Formato inesperado de MITECO");
-    const date = officialTimestamp(body.Fecha);
-    for (const row of body.ListaEESSPrecio.filter((row) =>
-      /\bCOSTCO\b/i.test(row["Rótulo"] ?? ""),
-    )) {
-      const slug = stationSlug(row.Municipio);
-      const coordinate = (value: string) =>
-        value && Number.isFinite(Number(value.replace(",", ".")))
-          ? Number(value.replace(",", "."))
-          : null;
+    date = officialTimestamp(body.Fecha);
+  } catch (error) {
+    if (!fixture) {
+      await env.DB.prepare(
+        "INSERT INTO sync_state(source,cursor,failures) VALUES ('official',?,1) ON CONFLICT(source) DO UPDATE SET cursor=excluded.cursor,failures=failures+1",
+      )
+        .bind(Number(province))
+        .run();
+      await log(
+        env.DB,
+        "official",
+        "Provincia " +
+          province +
+          ": " +
+          (error instanceof Error ? error.message : "Error de lectura"),
+      );
+    }
+    throw error;
+  }
+  const coordinate = (value: string | undefined) =>
+    value && Number.isFinite(Number(value.replace(",", ".")))
+      ? Number(value.replace(",", "."))
+      : null;
+  const isCostco = (row: Official) => /\bCOSTCO\b/i.test(row["Rótulo"] ?? "");
+  const officialStations = body.ListaEESSPrecio.filter(isCostco);
+  const known = (
+    await env.DB.prepare(
+      "SELECT slug,official_id,latitude,longitude FROM stations ORDER BY slug",
+    ).all<{
+      slug: string;
+      official_id: string | null;
+      latitude: number | null;
+      longitude: number | null;
+    }>()
+  ).results;
+  const byOfficialId = new Map(
+    known.filter((s) => s.official_id).map((s) => [s.official_id, s.slug]),
+  );
+  const occupied = new Map(known.map((s) => [s.slug, s.official_id]));
+  const locations = new Map(
+    known.flatMap((s) =>
+      s.latitude !== null && s.longitude !== null
+        ? [[s.slug, { lat: s.latitude, lon: s.longitude }] as const]
+        : [],
+    ),
+  );
+  let changed = 0;
+  for (const row of officialStations) {
+    const base = stationSlug(row.Municipio);
+    const slug =
+      byOfficialId.get(row.IDEESS) ??
+      (occupied.get(base) && occupied.get(base) !== row.IDEESS
+        ? base + "-" + row.IDEESS
+        : base);
+    occupied.set(slug, row.IDEESS);
+    const statements = [
+      env.DB.prepare(
+        `INSERT INTO stations(slug,official_id,name,city,province,region,postal_code,address,latitude,longitude,hours)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(slug) DO UPDATE SET official_id=excluded.official_id,name=COALESCE(stations.name_override,excluded.name),city=excluded.city,province=excluded.province,region=excluded.region,postal_code=excluded.postal_code,address=excluded.address,latitude=excluded.latitude,longitude=excluded.longitude,hours=excluded.hours,updated_at=CURRENT_TIMESTAMP`,
+      ).bind(
+        slug,
+        row.IDEESS,
+        "Costco " + row.Municipio,
+        row.Municipio,
+        row.Provincia,
+        regions[row.IDCCAA] ?? null,
+        row["C.P."],
+        row["Dirección"],
+        coordinate(row.Latitud),
+        coordinate(row["Longitud (WGS84)"]),
+        row.Horario,
+      ),
+    ];
+    for (const [fuel, key] of Object.entries(officialFields)) {
+      const price = milli(row[key] ?? "");
+      if (price)
+        statements.push(
+          env.DB.prepare(
+            "INSERT OR IGNORE INTO observations VALUES (?,?,'official',?,?,?)",
+          ).bind(slug, fuel, body.Fecha, date, price),
+        );
+    }
+    const lat = coordinate(row.Latitud),
+      lon = coordinate(row["Longitud (WGS84)"]);
+    if (lat !== null && lon !== null) locations.set(slug, { lat, lon });
+    await env.DB.batch(statements);
+    changed++;
+  }
+  const candidates = body.ListaEESSPrecio.flatMap((other) => {
+    if (isCostco(other)) return [];
+    const latitude = coordinate(other.Latitud),
+      longitude = coordinate(other["Longitud (WGS84)"]);
+    return latitude === null || longitude === null
+      ? []
+      : [{ other, latitude, longitude }];
+  });
+  const partitions = fixture
+    ? [...new Set(candidates.map((c) => c.other.IDProvincia))]
+    : [province];
+  for (const partition of partitions) {
+    const regional = candidates.filter(
+      (c) => c.other.IDProvincia === partition,
+    );
+    const previously = (
+      await env.DB.prepare(
+        "SELECT DISTINCT station FROM nearby_prices WHERE province_id=?",
+      )
+        .bind(partition)
+        .all<{ station: string }>()
+    ).results;
+    const stale = new Set(previously.map((r) => r.station));
+    for (const [slug, { lat, lon }] of locations) {
+      const nearby = regional.flatMap((candidate) => {
+        if (
+          Math.abs(candidate.latitude - lat) > 0.46 ||
+          Math.abs(candidate.longitude - lon) > 0.72
+        )
+          return [];
+        const km = distance(lat, lon, candidate.latitude, candidate.longitude);
+        return km <= 50 ? [{ ...candidate, km }] : [];
+      });
+      if (!nearby.length && !stale.has(slug)) continue;
       const statements = [
         env.DB.prepare(
-          `INSERT INTO stations(slug,official_id,name,city,province,region,postal_code,address,latitude,longitude,hours)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(slug) DO UPDATE SET official_id=excluded.official_id,name=excluded.name,city=excluded.city,province=excluded.province,region=excluded.region,postal_code=excluded.postal_code,address=excluded.address,latitude=excluded.latitude,longitude=excluded.longitude,hours=excluded.hours,updated_at=CURRENT_TIMESTAMP`,
-        ).bind(
-          slug,
-          row.IDEESS,
-          "Costco " + row.Municipio,
-          row.Municipio,
-          row.Provincia,
-          regions[row.IDCCAA] ?? null,
-          row["C.P."],
-          row["Dirección"],
-          coordinate(row.Latitud),
-          coordinate(row["Longitud (WGS84)"]),
-          row.Horario,
-        ),
+          "DELETE FROM nearby_prices WHERE station=? AND province_id=?",
+        ).bind(slug, partition),
       ];
-      for (const [fuel, key] of Object.entries(officialFields)) {
-        const price = milli(row[key] ?? "");
-        if (price)
+      stale.delete(slug);
+      for (const [fuel, field] of Object.entries(officialFields)) {
+        const eligible = nearby.flatMap((candidate) => {
+          const price = milli(candidate.other[field] ?? "");
+          return price ? [{ ...candidate, price }] : [];
+        });
+        const selected = new Map<string, (typeof eligible)[number]>();
+        for (const radius of [5, 10, 20, 50]) {
+          const best = eligible
+            .filter((c) => c.km <= radius)
+            .sort((a, b) => a.price - b.price || a.km - b.km)
+            .slice(0, 5);
+          for (const candidate of best)
+            selected.set(candidate.other.IDEESS, candidate);
+        }
+        for (const c of selected.values())
           statements.push(
             env.DB.prepare(
-              "INSERT OR IGNORE INTO observations VALUES (?,?,'official',?,?,?)",
-            ).bind(slug, fuel, body.Fecha, date, price),
+              "INSERT INTO nearby_prices VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(station,fuel,official_id) DO UPDATE SET name=excluded.name,address=excluded.address,latitude=excluded.latitude,longitude=excluded.longitude,distance=excluded.distance,price=excluded.price,verified_at=excluded.verified_at,province_id=excluded.province_id",
+            ).bind(
+              slug,
+              c.other.IDEESS,
+              fuel,
+              c.other["Rótulo"],
+              c.other["Dirección"],
+              c.latitude,
+              c.longitude,
+              c.km,
+              c.price,
+              date,
+              partition,
+            ),
           );
       }
-      const lat = coordinate(row.Latitud),
-        lon = coordinate(row["Longitud (WGS84)"]);
-      if (lat !== null && lon !== null) {
-        statements.push(
-          env.DB.prepare("DELETE FROM nearby_prices WHERE station=?").bind(
-            slug,
-          ),
-        );
-        const nearby = body.ListaEESSPrecio.flatMap((other) => {
-          if (/\bCOSTCO\b/i.test(other["Rótulo"] ?? "")) return [];
-          const latitude = coordinate(other.Latitud),
-            longitude = coordinate(other["Longitud (WGS84)"]);
-          if (latitude === null || longitude === null) return [];
-          const km = distance(lat, lon, latitude, longitude);
-          return km <= 50 ? [{ other, latitude, longitude, km }] : [];
-        }).sort((a, b) => a.km - b.km);
-        for (const [fuel, field] of Object.entries(officialFields)) {
-          const eligible = nearby.flatMap((candidate) => {
-            const price = milli(candidate.other[field] ?? "");
-            return price ? [{ ...candidate, price }] : [];
-          });
-          const selected = new Map<string, (typeof eligible)[number]>();
-          for (const radius of [5, 10, 20, 50]) {
-            const best = eligible
-              .filter((c) => c.km <= radius)
-              .sort((a, b) => a.price - b.price || a.km - b.km)
-              .slice(0, 5);
-            for (const candidate of best)
-              selected.set(candidate.other.IDEESS, candidate);
-          }
-          for (const c of selected.values())
-            statements.push(
-              env.DB.prepare(
-                "INSERT INTO nearby_prices VALUES (?,?,?,?,?,?,?,?,?,?)",
-              ).bind(
-                slug,
-                c.other.IDEESS,
-                fuel,
-                c.other["Rótulo"],
-                c.other["Dirección"],
-                c.latitude,
-                c.longitude,
-                c.km,
-                c.price,
-                date,
-              ),
-            );
-        }
-      }
       await env.DB.batch(statements);
-      changed++;
     }
+    if (stale.size)
+      await env.DB.batch(
+        [...stale].map((slug) =>
+          env.DB.prepare(
+            "DELETE FROM nearby_prices WHERE station=? AND province_id=?",
+          ).bind(slug, partition),
+        ),
+      );
+    await env.DB.prepare(
+      "INSERT INTO official_province_sync VALUES (?,?) ON CONFLICT(province_id) DO UPDATE SET last_success=excluded.last_success",
+    )
+      .bind(partition, date)
+      .run();
   }
-  if (!changed) throw new Error("MITECO no devolvió estaciones Costco");
   await env.DB.prepare(
-    "INSERT INTO sync_state(source,last_success) VALUES ('official',?) ON CONFLICT(source) DO UPDATE SET last_success=excluded.last_success",
+    "INSERT INTO sync_state(source,last_success,cursor) VALUES ('official',?,?) ON CONFLICT(source) DO UPDATE SET last_success=excluded.last_success,cursor=excluded.cursor,failures=0",
   )
-    .bind(new Date().toISOString())
+    .bind(new Date().toISOString(), fixture ? (state ?? 0) : Number(province))
     .run();
-  await log(env.DB, "official", "Estaciones consultadas: " + changed);
-  return { changed };
+  if (changed)
+    await log(env.DB, "official", "Estaciones consultadas: " + changed);
+  return { changed, province: fixture ? null : province };
 }
